@@ -1,11 +1,21 @@
 {
+  "name": "your-project-name",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon app.js"
+  },
   "dependencies": {
+    "@hapi/joi": "^17.1.1",
     "bcryptjs": "^2.4.3",
     "config": "^3.3.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "joi": "^17.13.3",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^8.4.4",
+    "nodemailer": "^6.9.14",
+    "nodemon": "^3.1.4",
     "otp-generator": "^4.0.1"
   }
 }

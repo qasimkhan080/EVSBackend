@@ -1,8 +1,9 @@
-
 {
-    "mongoURI": "mongodb://localhost:27017/EMPR",
-    "jwtSecret": "company.com Token Secret",
-    "OtpExpire": "300s",
-    "TokenExpire": "24h",
-    "OtpSecret": "company.com Otp Secret"
+  "emailUser": "azamk37731@gmail.com",
+  "emailPass": "f4d11ebe12",
+  "mongoURI": "mongodb://localhost:27017/EMPR",
+  "jwtSecret": "company.com Token Secret",
+  "OtpExpire": "300s",
+  "TokenExpire": "1m",
+  "OtpSecret": "company.com Otp Secret"
 }

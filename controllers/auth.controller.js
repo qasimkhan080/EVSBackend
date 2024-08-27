@@ -1,19 +1,19 @@
-const express = require("express");
 const Joi = require('@hapi/joi');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('config');
-const router = express.Router();
-const Company = require("../models/Company"); // Assuming you have a Company model defined
-const generateOtp = require("../shared/generateOtp"); // Assuming you have a function to generate OTP
-const otpStoreTimeVerify = require("../middlewares/otpStoreTimeVerify"); // Assuming you have middleware for OTP verification
-const companyAuth = require("../middlewares/companyAuth");
+const Company = require("../models/company.model")
+const generateOtp = require("../shared/generateOtp"); 
+const sendOtpEmail = require('../notifications/emailService')
 
 const otpValidation = Joi.object({
     otp: Joi.number().integer().positive().required()
 });
 
-router.post("/signup", async (req, res) => {
+
+
+exports.signup = async (req, res) => {
+    
     const { email, password } = req.body;
 
     try {
@@ -36,6 +36,9 @@ router.post("/signup", async (req, res) => {
             otp
         });
         company = await company.save();
+
+        await sendOtpEmail(email, otp);
+        
         const payload = { company: { id: company.id } };
         const token = jwt.sign(payload, config.get('OtpSecret'), { expiresIn: config.get('TokenExpire') });
            res.status(200).json({
@@ -59,9 +62,9 @@ router.post("/signup", async (req, res) => {
             }
         });
     }
-});
-router.post('/verify-signup-company-otp', otpStoreTimeVerify, async (req, res) => {
+};
 
+exports.verifySignupOtp = async (req, res) => {
     const { error } = otpValidation.validate(req.body);
     if (error) {
         return res.status(400).json({
@@ -138,58 +141,27 @@ router.post('/verify-signup-company-otp', otpStoreTimeVerify, async (req, res) =
             }
         });
     }
-});
+};
 
-router.put("/signup-step2", companyAuth, async (req, res) => {
-    const { firstName, secondName, companyName, companySize, industry } = req.body;
-    console.log(req.body);
+exports.registerCompany = async (req, res) => {
+    const { firstName, secondName, companyName, companySize, industry, companyWebsite, phoneNumber, heardAboutUs } = req.body;
+
+    const updateFields = {};
+
+    if (firstName) updateFields.firstName = firstName;
+    if (secondName) updateFields.lastName = secondName;
+    if (companyName) updateFields.companyName = companyName;
+    if (companySize) updateFields.companySize = companySize;
+    if (industry) updateFields.industry = industry;
+    if (companyWebsite) updateFields.companyWebsite = companyWebsite;
+    if (phoneNumber) updateFields.phoneNumber = phoneNumber;
+    if (heardAboutUs) updateFields.heardAboutUs = heardAboutUs;
+
     try {
-
         let company = await Company.findByIdAndUpdate(
             req.company.id,
             {
-                $set: {
-                    firstName: firstName,
-                    lastName: secondName,
-                    companyName: companyName,
-                    companySize: companySize,
-                    industry: industry
-                }
-            },
-            { new: true }
-        );
-         res.status(200).json({
-            data: {
-                company: company
-            },
-            meta: { statusCode: 200, status: true, message: 'Successfully Added!' }
-        });
-    }
-    catch (error) {
-        res.status(500).json({
-            meta: {
-                statusCode: 500,
-                status: false,
-                message: 'Internal server error'
-            }
-        });
-    }
-
-
-});
-
-router.put("/signup-final-step", companyAuth, async (req, res) => {
-    const { companyWebsite, phoneNumber, heardAboutUs } = req.body;
-    try {
-
-        let company = await Company.findByIdAndUpdate(
-            req.company.id,
-            {
-                $set: {
-                    companyWebsite: companyWebsite,
-                    phoneNumber: phoneNumber,
-                    heardAboutUs: heardAboutUs
-                }
+                $set: updateFields
             },
             { new: true }
         );
@@ -198,10 +170,9 @@ router.put("/signup-final-step", companyAuth, async (req, res) => {
             data: {
                 company: company
             },
-            meta: { statusCode: 200, status: true, message: 'Successfully Added!' }
+            meta: { statusCode: 200, status: true, message: 'Successfully Updated!' }
         });
-    }
-    catch (error) {
+    } catch (error) {
         res.status(500).json({
             meta: {
                 statusCode: 500,
@@ -210,11 +181,10 @@ router.put("/signup-final-step", companyAuth, async (req, res) => {
             }
         });
     }
+};
 
 
-})
-
-router.post("/sign-in", async (req, res) => {
+exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
@@ -242,14 +212,12 @@ router.post("/sign-in", async (req, res) => {
             email: company.email,
             companyName: company.companyName,
             status: company.status,
-           companySize :company .companySize,
-            phoneNumber:  company. phoneNumber,
+           companySize:company.companySize,
+            phoneNumber:  company.phoneNumber,
             firstName:company.firstName,
             lastName:company.lastName,
             heardAboutUs:company.heardAboutUs,
             companyWebsite:company.companyWebsite
-
-
         }
         const payload = { store: { id: company.id, status: company['status'] } }
         let token = await jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
@@ -259,6 +227,4 @@ router.post("/sign-in", async (req, res) => {
             meta: { statusCode: 500, status: false, message: "Server error", },
         });
     }
-});
-
-module.exports = router;
+};
