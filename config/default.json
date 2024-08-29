@@ -4,6 +4,6 @@
   "mongoURI": "mongodb://localhost:27017/EMPR",
   "jwtSecret": "company.com Token Secret",
   "OtpExpire": "300s",
-  "TokenExpire": "1m",
+  "TokenExpire": "1h",
   "OtpSecret": "company.com Otp Secret"
 }

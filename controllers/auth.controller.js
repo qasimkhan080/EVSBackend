@@ -165,10 +165,12 @@ exports.registerCompany = async (req, res) => {
             },
             { new: true }
         );
-
+        const payload = { company: { id: company.id } };
+        // const token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
         res.status(200).json({
             data: {
-                company: company
+                company: company,
+                //  token:token
             },
             meta: { statusCode: 200, status: true, message: 'Successfully Updated!' }
         });
@@ -220,7 +222,7 @@ exports.login = async (req, res) => {
             companyWebsite:company.companyWebsite
         }
         const payload = { store: { id: company.id, status: company['status'] } }
-        let token = await jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
+        let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
         res.status(200).json({ meta: { statusCode: 200, status: true, message: "Login successful", }, data: { token: token, company: data }, });
     } catch (error) {
         console.error("Error during login:", error); res.status(500).json({
