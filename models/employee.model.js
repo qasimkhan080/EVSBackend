@@ -54,39 +54,51 @@ const employeeSchema = mongoose.Schema({
             conversation: {
                 type: String,
                 required: true,
-                enum: ["Basic", "Intermediate", "Advanced", "Fluent"], // Example values, adjust as needed
+                enum: ["Professional", "Conventional", "Beginner"], 
             },
         },
     ],
-    jobTitle: {
-        type: String,
-        required: true,
-    },
-    company: {
-        type: String,
-        required: true,
-    },
-    location: {
-        type: String,
-        required: true,
-    },
-    currentlyWorking: {
-        type: Boolean,
-        default: false,
-    },
-    from: {
-        type: Date,
-        required: true,
-    },
-    to: {
-        type: Date,
-    },
-    description: {
-        type: String,
-    },
+    employmentHistory: [
+        {
+            jobTitle: {
+                type: String,
+                required: true,
+            },
+            company: {
+                type: String,
+                required: true,
+            },
+            location: {
+                type: String,
+                required: true,
+            },
+            currentlyWorking: {
+                type: Boolean,
+                default: false,
+            },
+            from: {
+                type: Date,
+                required: true,
+            },
+            to: {
+                type: Date,
+            },
+            description: {
+                type: String,
+            },
+        },
+    ],
+    skills: [
+        {
+            skillName: {
+                type: String,
+                required: true,
+            }
+        },
+    ],
     companyRefId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Company", // Reference to the Company model
+        ref: "Company",
         required: true,
     },
     createdAt: {

@@ -5,6 +5,8 @@ const companyAuth = require("../middlewares/companyAuth");
 
 
 router.post("/add", companyAuth, employeeController.addEmployee);
-router.get("/employees/:companyRefId", companyAuth, employeeController.getEmployeesByCompany)
+router.get("/companies", employeeController.getCompanies);
+router.get("/com/:companyRefId", companyAuth, employeeController.getEmployeesByCompany);
+router.get("/:id", employeeController.getCompanyById)
 
 module.exports = router;
