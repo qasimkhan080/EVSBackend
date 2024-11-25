@@ -79,6 +79,68 @@ exports.addEmployee = async (req, res) => {
 };
 
 
+ 
+exports.userSignup = async (req, res) => {
+  const { firstName, lastName, email, password } = req.body;
+
+  try {
+     if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        meta: {
+          statusCode: 400,
+          status: false,
+          message: 'All fields (firstName, lastName, email, password) are required.',
+        },
+      });
+    }
+
+     const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        meta: {
+          statusCode: 409,
+          status: false,
+          message: 'Email already exists. Please login instead.',
+        },
+      });
+    }
+
+     const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+     const newUser = new User({
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+    });
+
+    await newUser.save();
+
+    res.status(201).json({
+      meta: {
+        statusCode: 201,
+        status: true,
+        message: 'Signup successful!',
+      },
+      data: {
+        id: newUser._id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+      },
+    });
+  } catch (error) {
+    console.error('Error during signup:', error);
+    res.status(500).json({
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: 'Server error during signup.',
+      },
+    });
+  }
+};
 
 exports.getEmployeesByCompany = async (req, res) => {
   debugger

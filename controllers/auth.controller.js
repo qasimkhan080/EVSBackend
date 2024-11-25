@@ -5,6 +5,7 @@ const config = require('config');
 const Company = require("../models/company.model")
 const generateOtp = require("../shared/generateOtp"); 
 const sendOtpEmail = require('../notifications/emailService')
+const Employee = require('../models/employee.model')
 
 const otpValidation = Joi.object({
     otp: Joi.number().integer().positive().required()
@@ -63,6 +64,73 @@ exports.signup = async (req, res) => {
         });
     }
 };
+exports.userSignup = async (req, res) => {
+    const { firstName, lastName, email, password } = req.body;
+
+    try {
+        // Validate request fields
+        if (!firstName || !lastName || !email || !password) {
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: 'All fields (firstName, lastName, email, password) are required.',
+                },
+            });
+        }
+
+        // Check if the email already exists
+        const existingUser = await Employee.findOne({ email }); // Assuming Employee schema is used
+        if (existingUser) {
+            return res.status(409).json({
+                meta: {
+                    statusCode: 409,
+                    status: false,
+                    message: 'Email already exists. Please login instead.',
+                },
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create new user
+        const newUser = new Employee({
+            firstName,
+            lastName,
+            email,
+            password: hashedPassword,
+        });
+
+        // Save user to database
+        await newUser.save();
+
+        // Respond with success message
+        res.status(201).json({
+            meta: {
+                statusCode: 201,
+                status: true,
+                message: 'Signup successful!',
+            },
+            data: {
+                id: newUser._id,
+                firstName: newUser.firstName,
+                lastName: newUser.lastName,
+                email: newUser.email,
+            },
+        });
+    } catch (error) {
+        console.error('Error during signup:', error);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: 'Server error during signup.',
+            },
+        });
+    }
+};
+
 
 exports.verifySignupOtp = async (req, res) => {
     const { error } = otpValidation.validate(req.body);
