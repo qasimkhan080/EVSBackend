@@ -9,39 +9,52 @@ const employeeSchema = mongoose.Schema({
         type: String,
         required: true,
     },
-    country: {
-        type: String,
-        required: true,
-    },
-    city: {
-        type: String,
-        required: true,
-    },
-    phoneNumber: {
-        type: String,
-        required: true,
-    },
     email: {
         type: String,
         required: true,
         unique: true,
     },
+    password: {
+        type: String,
+        required: true,
+        minlength: 6,
+    },
+    country: {
+        type: String,
+        required: false,  // Removed required
+    },
+    city: {
+        type: String,
+        required: false,  // Removed required
+    },
+    phoneNumber: {
+        type: String,
+        required: false,  // Removed required
+    },
+    otp: 
+    { type: String ,
+        required: true,
+    },
+    isEmailVerified:
+     { type: Boolean, 
+        default: false },
     education: [
         {
             levelOfEducation: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             fieldOfStudy: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             from: {
                 type: Date,
-                required: true,
+                required: false,  // Removed required
             },
             to: {
                 type: Date,
+                required: false,  // Removed required
             },
         },
     ],
@@ -49,12 +62,12 @@ const employeeSchema = mongoose.Schema({
         {
             language: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             conversation: {
                 type: String,
-                required: true,
-                enum: ["Professional", "Conventional", "Beginner"], 
+                required: false,  // Removed required
+                enum: ["Professional", "Conventional", "Beginner"],
             },
         },
     ],
@@ -62,15 +75,15 @@ const employeeSchema = mongoose.Schema({
         {
             jobTitle: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             company: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             location: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             },
             currentlyWorking: {
                 type: Boolean,
@@ -78,13 +91,15 @@ const employeeSchema = mongoose.Schema({
             },
             from: {
                 type: Date,
-                required: true,
+                required: false,  // Removed required
             },
             to: {
                 type: Date,
+                required: false,  // Removed required
             },
             description: {
                 type: String,
+                required: false,  // Removed required
             },
         },
     ],
@@ -92,14 +107,14 @@ const employeeSchema = mongoose.Schema({
         {
             skillName: {
                 type: String,
-                required: true,
+                required: false,  // Removed required
             }
         },
     ],
     companyRefId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Company",
-        required: true,
+        required: false,
     },
     createdAt: {
         type: Date,

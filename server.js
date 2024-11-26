@@ -14,9 +14,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use('/api/auth', authRoutes)
 app.use('/api/employee', employeeRoutes)
-
-
-
+ 
 const PORT =  5000;
 server.listen(PORT, () => {
   console.log('server started on port' + PORT)

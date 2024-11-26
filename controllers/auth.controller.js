@@ -68,19 +68,19 @@ exports.userSignup = async (req, res) => {
     const { firstName, lastName, email, password } = req.body;
 
     try {
-        // Validate request fields
+        // Validate fields
         if (!firstName || !lastName || !email || !password) {
             return res.status(400).json({
                 meta: {
                     statusCode: 400,
                     status: false,
-                    message: 'All fields (firstName, lastName, email, password) are required.',
+                    message: 'All fields are required.',
                 },
             });
         }
 
-        // Check if the email already exists
-        const existingUser = await Employee.findOne({ email }); // Assuming Employee schema is used
+        // Check if user exists
+        const existingUser = await Employee.findOne({ email });
         if (existingUser) {
             return res.status(409).json({
                 meta: {
@@ -91,32 +91,28 @@ exports.userSignup = async (req, res) => {
             });
         }
 
-        // Hash password
+        // Generate OTP and hash password
+        const otp = generateOtp();
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create new user
-        const newUser = new Employee({
+         const newUser = new Employee({
             firstName,
             lastName,
             email,
             password: hashedPassword,
+            otp,
+            isEmailVerified: false, // Initially set to false
         });
-
-        // Save user to database
         await newUser.save();
 
-        // Respond with success message
+        // Send OTP email
+        await sendOtpEmail(email, otp);
+
         res.status(201).json({
             meta: {
                 statusCode: 201,
                 status: true,
-                message: 'Signup successful!',
-            },
-            data: {
-                id: newUser._id,
-                firstName: newUser.firstName,
-                lastName: newUser.lastName,
-                email: newUser.email,
+                message: 'Signup successful! OTP has been sent to your email.',
             },
         });
     } catch (error) {
@@ -130,6 +126,7 @@ exports.userSignup = async (req, res) => {
         });
     }
 };
+
 
 
 exports.verifySignupOtp = async (req, res) => {
