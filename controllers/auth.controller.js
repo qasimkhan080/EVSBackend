@@ -17,7 +17,7 @@ const loginValidation = Joi.object({
 exports.loginEmp = async (req, res) => {
     const { email, password } = req.body;
 
-     const { error } = loginValidation.validate(req.body);
+    const { error } = loginValidation.validate(req.body);
     if (error) {
         return res.status(400).json({
             meta: {
@@ -29,7 +29,7 @@ exports.loginEmp = async (req, res) => {
     }
 
     try {
-         let employee = await Employee.findOne({ email });
+        let employee = await Employee.findOne({ email });
 
         if (!employee) {
             return res.status(404).json({
@@ -41,25 +41,34 @@ exports.loginEmp = async (req, res) => {
             });
         }
 
-         const isMatch = await bcrypt.compare(password, employee.password);
-
-        if (!isMatch) {
+        if (!employee.isEmailVerified) {
             return res.status(400).json({
-                meta: { statusCode: 400, status: false, message: "Invalid credentials", },
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Email not verified. Please verify your email.",
+                },
             });
         }
 
-         const data = {
-             email: employee.email,
+        const isMatch = await bcrypt.compare(password, employee.password);
+        if (!isMatch) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid credentials" },
+            });
+        }
+
+        const data = {
+            email: employee.email,
             firstName: employee.firstName,
             lastName: employee.lastName,
             isEmailVerified: employee.isEmailVerified,
         };
 
-         const payload = { employee: { id: employee.id, status: employee['status'] } };
+        const payload = { employee: { id: employee.id, status: employee['status'] } };
         let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
 
-         res.status(200).json({
+        res.status(200).json({
             meta: {
                 statusCode: 200,
                 status: true,
