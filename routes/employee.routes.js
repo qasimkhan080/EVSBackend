@@ -12,7 +12,7 @@ router.post("/verifyotp",  employeeController.verifyEmployeeOtp);
 router.get("/companies", employeeController.getCompanies);
 router.get("/com/:companyRefId", companyAuth, employeeController.getEmployeesByCompany);
 router.get("/:id", employeeController.getCompanyById)
+router.post("/login", authController.loginEmp);
 
 module.exports = router;
 
- 

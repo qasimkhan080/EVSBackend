@@ -10,7 +10,74 @@ const Employee = require('../models/employee.model')
 const otpValidation = Joi.object({
     otp: Joi.number().integer().positive().required()
 });
+const loginValidation = Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(6).required()
+});
+exports.loginEmp = async (req, res) => {
+    const { email, password } = req.body;
 
+     const { error } = loginValidation.validate(req.body);
+    if (error) {
+        return res.status(400).json({
+            meta: {
+                statusCode: 400,
+                status: false,
+                message: error.details[0].message
+            }
+        });
+    }
+
+    try {
+         let employee = await Employee.findOne({ email });
+
+        if (!employee) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Employee not found",
+                },
+            });
+        }
+
+         const isMatch = await bcrypt.compare(password, employee.password);
+
+        if (!isMatch) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid credentials", },
+            });
+        }
+
+         const data = {
+             email: employee.email,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            isEmailVerified: employee.isEmailVerified,
+        };
+
+         const payload = { employee: { id: employee.id, status: employee['status'] } };
+        let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
+
+         res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Login successful",
+            },
+            data: { token: token, employee: data },
+        });
+    } catch (error) {
+        console.error("Error during login:", error);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Server error",
+            },
+        });
+    }
+};
 
 
 exports.signup = async (req, res) => {
