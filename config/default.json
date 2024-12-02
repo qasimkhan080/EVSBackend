@@ -1,7 +1,7 @@
 {
   "emailUser": "azamk37731@gmail.com",
   "emailPass": "f4d11ebe12",
-  "mongoURI": "mongodb://127.0.0.1:27017/EMPR",
+  "mongoURI": "mongodb+srv://EVS:Ws5cSl1OKxbf2XSm@cluster0.7olrq.mongodb.net/",
   "jwtSecret": "company.com Token Secret",
   "OtpExpire": "300s",
   "TokenExpire": "1h",
