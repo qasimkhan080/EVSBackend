@@ -189,7 +189,7 @@ exports.userSignup = async (req, res) => {
                 statusCode: 201,
                 status: true,
                 message: 'Signup successful! OTP has been sent to your email.',
-            },
+            },  
         });
     } catch (error) {
         console.error('Error during signup:', error);
