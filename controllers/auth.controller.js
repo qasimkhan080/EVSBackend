@@ -10,7 +10,83 @@ const Employee = require('../models/employee.model')
 const otpValidation = Joi.object({
     otp: Joi.number().integer().positive().required()
 });
+const loginValidation = Joi.object({
+    email: Joi.string().email().required(),
+    password: Joi.string().min(6).required()
+});
+exports.loginEmp = async (req, res) => {
+    const { email, password } = req.body;
 
+    const { error } = loginValidation.validate(req.body);
+    if (error) {
+        return res.status(400).json({
+            meta: {
+                statusCode: 400,
+                status: false,
+                message: error.details[0].message
+            }
+        });
+    }
+
+    try {
+        let employee = await Employee.findOne({ email });
+
+        if (!employee) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Employee not found",
+                },
+            });
+        }
+
+        if (!employee.isEmailVerified) {
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Email not verified. Please verify your email.",
+                },
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, employee.password);
+        if (!isMatch) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid credentials" },
+            });
+        }
+
+        const data = {
+            email: employee.email,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            isEmailVerified: employee.isEmailVerified,
+        };
+
+        const payload = { employee: { id: employee.id, status: employee['status'] } };
+        let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
+
+        res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Login successful",
+            },
+            data: { token: token, employee: data },
+        });
+    } catch (error) {
+        console.error("Error during login:", error);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Server error",
+            },
+        });
+    }
+};
 
 
 exports.signup = async (req, res) => {
@@ -68,19 +144,19 @@ exports.userSignup = async (req, res) => {
     const { firstName, lastName, email, password } = req.body;
 
     try {
-        // Validate request fields
+        // Validate fields
         if (!firstName || !lastName || !email || !password) {
             return res.status(400).json({
                 meta: {
                     statusCode: 400,
                     status: false,
-                    message: 'All fields (firstName, lastName, email, password) are required.',
+                    message: 'All fields are required.',
                 },
             });
         }
 
-        // Check if the email already exists
-        const existingUser = await Employee.findOne({ email }); // Assuming Employee schema is used
+        // Check if user exists
+        const existingUser = await Employee.findOne({ email });
         if (existingUser) {
             return res.status(409).json({
                 meta: {
@@ -91,33 +167,29 @@ exports.userSignup = async (req, res) => {
             });
         }
 
-        // Hash password
+        // Generate OTP and hash password
+        const otp = generateOtp();
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create new user
-        const newUser = new Employee({
+         const newUser = new Employee({
             firstName,
             lastName,
             email,
             password: hashedPassword,
+            otp,
+            isEmailVerified: false, // Initially set to false
         });
-
-        // Save user to database
         await newUser.save();
 
-        // Respond with success message
+        // Send OTP email
+        await sendOtpEmail(email, otp);
+
         res.status(201).json({
             meta: {
                 statusCode: 201,
                 status: true,
-                message: 'Signup successful!',
-            },
-            data: {
-                id: newUser._id,
-                firstName: newUser.firstName,
-                lastName: newUser.lastName,
-                email: newUser.email,
-            },
+                message: 'Signup successful! OTP has been sent to your email.',
+            },  
         });
     } catch (error) {
         console.error('Error during signup:', error);
@@ -130,6 +202,7 @@ exports.userSignup = async (req, res) => {
         });
     }
 };
+
 
 
 exports.verifySignupOtp = async (req, res) => {

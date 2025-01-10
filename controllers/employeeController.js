@@ -77,6 +77,53 @@ exports.addEmployee = async (req, res) => {
     });
   }
 };
+exports.verifyEmployeeOtp = async (req, res) => {
+  const { otp, email } = req.body;  
+
+  try {
+      let employee = await Employee.findOne({ email: email });
+
+      if (employee) {
+          if (otp === employee.otp) {
+              await Employee.findByIdAndUpdate(employee.id, { $set: { isEmailVerified: true } });
+
+              return res.status(200).json({
+                  data: { employee },
+                  meta: {
+                      statusCode: 200,
+                      status: true,
+                      message: `Successfully verified email`
+                  }
+              });
+          } else {
+              return res.status(400).json({
+                  meta: {
+                      statusCode: 400,
+                      status: false,
+                      message: "OTP is not valid!"
+                  }
+              });
+          }
+      } else {
+          return res.status(400).json({
+              meta: {
+                  statusCode: 400,
+                  status: false,
+                  message: "Employee not found!"
+              }
+          });
+      }
+  } catch (error) {
+      console.error("Error in verifying employee OTP:", error);
+      return res.status(500).json({
+          meta: {
+              statusCode: 500,
+              status: false,
+              message: "Internal Server Error!"
+          }
+      });
+  }
+};
 
 
  
