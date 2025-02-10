@@ -1,31 +1,26 @@
 const nodemailer = require('nodemailer');
-const config = require('config');
 
 const sendOtpEmail = async (email, otp) => {
   try {
     let transporter = nodemailer.createTransport({
       service: 'Gmail',
       auth: {
-        user: 'azamk37731@gmail.com',//config.get('emailUser'), 
-        pass: 'luii ppkw vdvr cqxj'//config.get('emailPass'), 
-
-        
+        user: 'azamk37731@gmail.com',
+        pass: 'luii ppkw vdvr cqxj'
 
       },
       tls: {
         rejectUnauthorized: false,
-    },
+      },
     });
 
-    // Email options
     let mailOptions = {
-      from: 'azamk37731@gmail.com', // sender address
-      to: email, // list of receivers
-      subject: 'Your OTP Code', // subject line
-      text: `Your OTP code is ${otp}`, // plain text body
+      from: 'azamk37731@gmail.com',
+      to: email,
+      subject: 'Your OTP Code',
+      text: `Your OTP code is ${otp}`,
     };
 
-    // Send email
     await transporter.sendMail(mailOptions);
     console.log('OTP email sent successfully');
   } catch (error) {

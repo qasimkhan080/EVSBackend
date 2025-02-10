@@ -1,13 +1,13 @@
-// controller/resendOtp.js
-
-const Company = require('../models/company.model'); // Replace with your actual model path
-const sendOtpEmail  = require('../notifications/emailService'); // Replace with your actual utils path
-const generateOtp = require("../shared/generateOtp"); 
+const Company = require('../models/company.model');
+const sendOtpEmail = require('../notifications/emailService');
+const generateOtp = require("../shared/generateOtp");
 const config = require('config');
 const jwt = require('jsonwebtoken');
 
 exports.resendOtp = async (req, res) => {
-    const { email } = req.body; 
+    const { email } = req.body;
+    console.log('Request Body:', req.body);
+    console.log('Email:', email);
 
     try {
         let company = await Company.findOne({ email });

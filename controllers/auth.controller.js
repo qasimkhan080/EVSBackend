@@ -3,66 +3,81 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('config');
 const Company = require("../models/company.model")
-const generateOtp = require("../shared/generateOtp"); 
-const sendOtpEmail = require('../notifications/emailService')
+const generateOtp = require("../shared/generateOtp");
+const sendOtpEmail = require('../notifications/emailService');
+const employeeModel = require('../models/employee.model');
 
 const otpValidation = Joi.object({
     otp: Joi.number().integer().positive().required()
 });
 
 
-
 exports.signup = async (req, res) => {
-    
     const { email, password } = req.body;
 
     try {
         let company = await Company.findOne({ email });
         if (company) {
-            return res.status(206).json({
+            return res.status(409).json({
                 meta: {
-                    statusCode: 206,
+                    statusCode: 409,
                     status: false,
                     message: `Account already exists for ${email}`
                 }
             });
         }
+
         const otp = generateOtp();
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+
+        const emailPrefix = email.substring(0, 6);
+        let companyRefId = `${emailPrefix}-${generateUniqueId()}`;
+
         company = new Company({
             email,
             password: hashedPassword,
-            otp
+            otp,
+            companyRefId,
         });
+
         company = await company.save();
 
         await sendOtpEmail(email, otp);
-        
+
         const payload = { company: { id: company.id } };
         const token = jwt.sign(payload, config.get('OtpSecret'), { expiresIn: config.get('TokenExpire') });
-           res.status(200).json({
+
+        return res.status(201).json({
             data: {
                 token,
-                email,
             },
             meta: {
-                statusCode: 200,
+                statusCode: 201,
                 status: true,
                 message: 'Company registered successfully'
             }
         });
 
     } catch (error) {
-        res.status(500).json({
+        console.error('Error during signup:', error.message);
+        return res.status(500).json({
             meta: {
                 statusCode: 500,
                 status: false,
-                message: 'Internal server error'
+                message: `Internal server error: ${error.message}`
             }
         });
     }
 };
+
+
+const generateUniqueId = () => {
+    const timestamp = Date.now();
+    const randomNumber = Math.floor(Math.random() * 10000);
+    return `${timestamp}${randomNumber}`;
+};
+
 
 exports.verifySignupOtp = async (req, res) => {
     const { error } = otpValidation.validate(req.body);
@@ -143,13 +158,14 @@ exports.verifySignupOtp = async (req, res) => {
     }
 };
 
+
 exports.registerCompany = async (req, res) => {
     const { firstName, secondName, companyName, companySize, industry, companyWebsite, phoneNumber, heardAboutUs } = req.body;
 
     const updateFields = {};
 
     if (firstName) updateFields.firstName = firstName;
-    if (secondName) updateFields.lastName = secondName;
+    if (secondName) updateFields.secondName = secondName;
     if (companyName) updateFields.companyName = companyName;
     if (companySize) updateFields.companySize = companySize;
     if (industry) updateFields.industry = industry;
@@ -166,11 +182,9 @@ exports.registerCompany = async (req, res) => {
             { new: true }
         );
         const payload = { company: { id: company.id } };
-        // const token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
         res.status(200).json({
             data: {
                 company: company,
-                //  token:token
             },
             meta: { statusCode: 200, status: true, message: 'Successfully Updated!' }
         });
@@ -181,6 +195,79 @@ exports.registerCompany = async (req, res) => {
                 status: false,
                 message: 'Internal server error'
             }
+        });
+    }
+};
+
+
+exports.getCompanyById = async (req, res) => {
+    const { companyId } = req.params;
+
+    try {
+        const company = await Company.findById(companyId);
+
+        if (!company) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Company not found",
+                },
+            });
+        }
+
+        res.status(200).json({
+            data: company,
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Company details fetched successfully",
+            },
+        });
+    } catch (error) {
+        console.error("Error fetching company details:", error.message);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Internal server error",
+            },
+        });
+    }
+};
+
+
+exports.deleteCompany = async (req, res) => {
+    const { companyId } = req.params;
+
+    try {
+        const deletedCompany = await Company.findByIdAndDelete(companyId);
+
+        if (!deletedCompany) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Company not found",
+                },
+            });
+        }
+
+        res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Company deleted successfully",
+            },
+        });
+    } catch (error) {
+        console.error("Error deleting company:", error.message);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Internal server error",
+            },
         });
     }
 };
@@ -214,12 +301,14 @@ exports.login = async (req, res) => {
             email: company.email,
             companyName: company.companyName,
             status: company.status,
-           companySize:company.companySize,
-            phoneNumber:  company.phoneNumber,
-            firstName:company.firstName,
-            lastName:company.lastName,
-            heardAboutUs:company.heardAboutUs,
-            companyWebsite:company.companyWebsite
+            companySize: company.companySize,
+            phoneNumber: company.phoneNumber,
+            firstName: company.firstName,
+            secondName: company.secondName,
+            heardAboutUs: company.heardAboutUs,
+            companyWebsite: company.companyWebsite,
+            companyRefId: company.companyRefId,
+
         }
         const payload = { store: { id: company.id, status: company['status'] } }
         let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
@@ -230,3 +319,80 @@ exports.login = async (req, res) => {
         });
     }
 };
+
+
+exports.getVerificationRequestsForCompany = async (req, res) => {
+    const { companyId } = req.params;
+
+    try {
+        const company = await Company.findOne({ companyRefId: companyId });
+
+        if (!company) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Company not found or has no received requests.",
+                },
+            });
+        }
+
+        res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Verification requests retrieved successfully.",
+            },
+            data: company.receivedRequests || [],
+        });
+    } catch (error) {
+        console.error("Error fetching verification requests for company:", error);
+        res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Server error. Could not fetch verification requests.",
+            },
+        });
+    }
+};
+
+
+exports.updateVerificationStatus = async (req, res) => {
+    try {
+        const { employeeId, requestId } = req.params;
+        const { status } = req.body;
+
+        if (!["Approved", "Rejected"].includes(status)) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
+            });
+        }
+
+        const employee = await employeeModel.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Employee not found." },
+            });
+        }
+
+        const requestIndex = employee.verificationRequests.findIndex(req => req._id.toString() === requestId);
+        if (requestIndex === -1) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Verification request not found." },
+            });
+        }
+
+        employee.verificationRequests[requestIndex].status = status;
+        await employee.save();
+
+        return res.status(200).json({
+            meta: { statusCode: 200, status: true, message: `Request ${status} successfully.` },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            meta: { statusCode: 500, status: false, message: "Server error. Could not update status." },
+        });
+    }
+};
+

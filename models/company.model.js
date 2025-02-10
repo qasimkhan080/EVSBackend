@@ -1,65 +1,84 @@
-const { type } = require("@hapi/joi/lib/extend");
-const { string } = require("joi");
 const mongoose = require("mongoose");
-const companySchema =mongoose.Schema({
+const companySchema = mongoose.Schema({
     email: {
         type: String,
-        required:true
+        required: true,
+        unique: true
+
     },
     password: {
-        type:String,
-        required:true
+        type: String,
+        required: true
     },
     otp: {
-        type:Number,
-        default:0
+        type: Number,
+        default: 0
     },
-    
-    isEmailVerify:{
+
+    isEmailVerify: {    
         type: Boolean,
         default: false
     },
     otpCount: {
         type: Number,
-        default:0
+        default: 0
     },
-    createdAt:{
+    createdAt: {
         type: Date,
         default: Date.now
     },
-    updatedAt:{
+    updatedAt: {
         type: Date,
         default: Date.now
     },
     firstName: {
         type: String,
     },
-    lastName: {
-        type:String,
+    secondName: {
+        type: String,
     },
-    companyName: {
-        type:String
-    },
+    companyName: { type: String, },
+
     companySize: {
-        type:String
+        type: String
     },
     industry: {
-        type:String
+        type: String
     },
-   companyWebsite: {
-    type:String
-   },
-   phoneNumber:{
-   type:String
-   },
-   heardAboutUs:{
-    type:String,
-   },
+    companyWebsite: {
+        type: String
+    },
+    phoneNumber: {
+        type: String
+    },
+    heardAboutUs: {
+        type: String,
+    },
     status: {
-    type:String,
-    default:"Active"
-    }
-    
+        type: String,
+        default: "Active"
+    },
+    companyRefId: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    receivedRequests: [
+        {
+
+            employeeId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+            employeeName: { type: String },
+            employeeEmail: { type: String },
+            companyName: { type: String },
+            designation: String,
+            skills: String,
+            description: String,
+            from: Date,
+            to: Date,
+            status: { type: String, default: "Pending" },
+            requestedAt: { type: Date, default: Date.now },
+        },
+    ],
 
 })
-module.exports = mongoose.model('Company',companySchema)
+module.exports = mongoose.model('Company', companySchema);
