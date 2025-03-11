@@ -1,4 +1,5 @@
 const Employee = require('../models/employee.model')
+const Joi = require('joi');
 const Company = require('../models/company.model')
 const bcrypt = require("bcrypt");
 const sendOtpEmail = require('../notifications/emailService')
@@ -6,9 +7,87 @@ const generateOtp = require("../shared/generateOtp");
 const config = require("config");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+const crypto = require("crypto");
+const Token = require('../models/TokenSchema');
+const nodemailer = require("nodemailer");
+
+
+
+const employeeSchema = Joi.object({
+  firstName: Joi.string().min(1).required().messages({
+    'string.base': 'First name should be a string',
+    'string.empty': 'First name is required',
+  }),
+  lastName: Joi.string().min(1).required().messages({
+    'string.base': 'Last name should be a string',
+    'string.empty': 'Last name is required',
+  }),
+  email: Joi.string().email().required().messages({
+    'string.base': 'Email should be a string',
+    'string.email': 'Invalid email format',
+    'string.empty': 'Email is required',
+  }),
+  phoneNumber: Joi.string().optional(),
+  country: Joi.string().optional(),
+  city: Joi.string().optional(),
+  about: Joi.string().optional(),
+  education: Joi.array().items(
+    Joi.object({
+      levelOfEducation: Joi.string().required(),
+      fieldOfStudy: Joi.string().required(),
+      fromYear: Joi.number().integer().required(),
+      toYear: Joi.number().integer().required(),
+    })
+  ).optional(),
+  languages: Joi.array().items(
+    Joi.object({
+      language: Joi.string().required(),
+      proficiency: Joi.string().optional(),
+    })
+  ).optional(),
+  employmentHistory: Joi.array().items(
+    Joi.object({
+      jobTitle: Joi.string().required(),
+      company: Joi.string().required(),
+      location: Joi.string().optional(),
+      type: Joi.string().optional(),
+      currentlyWorking: Joi.boolean().optional(),
+      fromMonth: Joi.string().optional(),
+      fromYear: Joi.number().optional(),
+      toMonth: Joi.string().optional(),
+      toYear: Joi.number().optional(),
+      description: Joi.string().optional(),
+      verified: Joi.boolean().optional(),
+    })
+  ).optional(),
+  skills: Joi.array().items(Joi.object({
+    skillName: Joi.string().required(),
+  })).optional(),
+  companyRefId: Joi.string().optional(),
+  selfEnrolled: Joi.boolean().required(),
+  password: Joi.string().min(6).optional().messages({
+    'string.min': 'Password should be at least 6 characters long',
+  }),
+});
 
 
 exports.addEmployee = async (req, res) => {
+
+
+  const { error } = employeeSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    return res.status(400).json({
+      meta: {
+        statusCode: 400,
+        status: false,
+        message: 'Validation failed.',
+        errors: error.details.map((err) => err.message),
+      },
+    });
+  }
+
+
   const {
     firstName,
     lastName,
@@ -149,6 +228,15 @@ exports.addEmployee = async (req, res) => {
       });
 
       await newEmployee.save();
+
+      const emailBody = `
+      Hello ${firstName},
+      Your account has been created by your company.
+      Email: ${email}
+      Password: ${password}
+      Please change your password after logging in.
+    `;
+      await sendOtpEmail(email, emailBody);
 
       return res.status(201).json({
         meta: {
@@ -369,6 +457,42 @@ exports.updateVerificationStatus = async (req, res) => {
 };
 
 
+exports.submitRating = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { status, rating, comment, selectedOptions } = req.body;
+
+    console.log("Employee ID in backend:", employeeId);
+
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Employee not found." },
+      });
+    }
+
+    employee.ratings.push({
+      rating,
+      comment,
+      selectedOptions,
+      date: new Date(),
+      status,
+    });
+
+    await employee.save();
+
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: `Rating submitted with status: ${status}` },
+    });
+  } catch (error) {
+    console.error("Error saving status and rating:", error);
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Server error. Could not update status and rating." },
+    });
+  }
+};
+
+
 exports.userSignup = async (req, res) => {
   const { firstName, lastName, email, password } = req.body;
 
@@ -551,6 +675,16 @@ exports.blockEmployee = async (req, res) => {
 exports.getCompanyById = async (req, res) => {
   const companyId = req.params.id;
 
+  if (!mongoose.Types.ObjectId.isValid(companyId)) {
+    return res.status(400).json({
+      meta: {
+        statusCode: 400,
+        status: false,
+        message: "Invalid company ID format.",
+      },
+      data: null,
+    });
+  }
   try {
     const company = await Company.findById(companyId);
 
@@ -808,3 +942,59 @@ exports.loginEmployee = async (req, res) => {
   }
 };
 
+
+exports.generateAndSendLink = async (req, res) => {
+  try {
+    const { email, companyRefId, companyName } = req.body;
+
+    if (!email || !companyRefId) {
+      return res.status(400).json({
+        meta: {
+          status: "error",
+          message: "Missing required fields.",
+        },
+      });
+    }
+
+    const existingUser = await Employee.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        meta: {
+          status: "error",
+          message: "Email is already registered.",
+        },
+      });
+    }
+
+    const token = jwt.sign(
+      { email, companyRefId, companyName, role: 'employee' },
+      config.get("jwtSecret"),
+      { expiresIn: config.get("TokenExpire") }
+    );
+
+    res.setHeader('Authorization', `Bearer ${token}`);
+
+    const link = `${config.get("frontendBaseUrl")}/add-employee?token=${token}`;
+    const emailBody = `Click the following link to register: ${link}`;
+
+    await sendOtpEmail(email, emailBody);
+
+    return res.status(200).json({
+      meta: {
+        status: "success",
+        message: "Registration link has been sent to your email.",
+      },
+      data: {
+        link,
+      },
+    });
+  } catch (error) {
+    console.error("Error generating and sending link:", error);
+    return res.status(500).json({
+      meta: {
+        status: "error",
+        message: "Error generating or sending the registration link.",
+      },
+    });
+  }
+};

@@ -5,5 +5,9 @@
   "jwtSecret": "company.com Token Secret",
   "OtpExpire": "300s",
   "TokenExpire": "24h",
-  "OtpSecret": "company.com Otp Secret"
+  "OtpSecret": "company.com Otp Secret",
+  "AuthSecret": "company.com Auth Secret",
+  "frontendBaseUrl": "http://localhost:3000",
+  "serverBaseUrl": "http://localhost:5000"
+
 }

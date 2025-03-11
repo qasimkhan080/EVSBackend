@@ -15,13 +15,13 @@ const companySchema = mongoose.Schema({
         default: 0
     },
 
-    isEmailVerify: {    
+    isEmailVerify: {
         type: Boolean,
         default: false
     },
     otpCount: {
         type: Number,
-        default: 0
+        default: 1
     },
     createdAt: {
         type: Date,
@@ -37,8 +37,13 @@ const companySchema = mongoose.Schema({
     secondName: {
         type: String,
     },
-    companyName: { type: String, },
-
+    companyName: {
+        type: String,
+    },
+    companyLogo: {
+        type: String,
+        required: true
+    },
     companySize: {
         type: String
     },
@@ -62,6 +67,14 @@ const companySchema = mongoose.Schema({
         type: String,
         required: true,
         unique: true
+    },
+    resetPasswordToken: {
+        type: String,
+        default: null
+    },
+    resetPasswordExpires: {
+        type: Date,
+        default: null
     },
     receivedRequests: [
         {

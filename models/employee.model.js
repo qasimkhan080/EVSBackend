@@ -79,6 +79,19 @@ const employeeSchema = mongoose.Schema({
             requestedAt: { type: Date, default: Date.now },
         },
     ],
+    
+    ratings: [
+        {
+          rating: Number,
+          comment: String,
+          selectedOptions: [String],
+          date: { type: Date, default: Date.now },
+          status: {
+            type: String,
+            enum: ['Approved', 'Rejected', 'pending'],
+          }
+        },
+      ],
 });
 
 module.exports = mongoose.model("Employee", employeeSchema);

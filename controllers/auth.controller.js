@@ -6,81 +6,36 @@ const Company = require("../models/company.model")
 const generateOtp = require("../shared/generateOtp");
 const sendOtpEmail = require('../notifications/emailService');
 const employeeModel = require('../models/employee.model');
+const { v4: uuidv4 } = require("uuid");
 
-const otpValidation = Joi.object({
-    otp: Joi.number().integer().positive().required()
-});
+exports.sendOtp = async (req, res) => {
+    console.log("📥 Received Payload:", req.body);
 
-
-exports.signup = async (req, res) => {
     const { email, password } = req.body;
 
-    try {
-        let company = await Company.findOne({ email });
-        if (company) {
-            return res.status(409).json({
-                meta: {
-                    statusCode: 409,
-                    status: false,
-                    message: `Account already exists for ${email}`
-                }
-            });
-        }
+    const schema = Joi.object({
+        email: Joi.string()
+            .email({ tlds: { allow: false } })
+            .max(40)
+            .required()
+            .messages({
+                "string.email": "Invalid email format.",
+                "string.max": "Email must not exceed 40 characters.",
+                "any.required": "Email is required."
+            }),
+        password: Joi.string()
+            .min(8)
+            .pattern(new RegExp("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$"))
+            .required()
+            .messages({
+                "string.min": "Password must be at least 8 characters long.",
+                "string.pattern.base": "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
+                "any.required": "Password is required."
+            })
+    });
 
-        const otp = generateOtp();
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+    const { error } = schema.validate({ email, password });
 
-        const emailPrefix = email.substring(0, 6);
-        let companyRefId = `${emailPrefix}-${generateUniqueId()}`;
-
-        company = new Company({
-            email,
-            password: hashedPassword,
-            otp,
-            companyRefId,
-        });
-
-        company = await company.save();
-
-        await sendOtpEmail(email, otp);
-
-        const payload = { company: { id: company.id } };
-        const token = jwt.sign(payload, config.get('OtpSecret'), { expiresIn: config.get('TokenExpire') });
-
-        return res.status(201).json({
-            data: {
-                token,
-            },
-            meta: {
-                statusCode: 201,
-                status: true,
-                message: 'Company registered successfully'
-            }
-        });
-
-    } catch (error) {
-        console.error('Error during signup:', error.message);
-        return res.status(500).json({
-            meta: {
-                statusCode: 500,
-                status: false,
-                message: `Internal server error: ${error.message}`
-            }
-        });
-    }
-};
-
-
-const generateUniqueId = () => {
-    const timestamp = Date.now();
-    const randomNumber = Math.floor(Math.random() * 10000);
-    return `${timestamp}${randomNumber}`;
-};
-
-
-exports.verifySignupOtp = async (req, res) => {
-    const { error } = otpValidation.validate(req.body);
     if (error) {
         return res.status(400).json({
             meta: {
@@ -90,111 +45,333 @@ exports.verifySignupOtp = async (req, res) => {
             }
         });
     }
-    const { otp } = req.body;
+
+    if (!req.file) {
+        return res.status(400).json({
+            meta: { statusCode: 400, status: false, message: "Company logo is required." }
+        });
+    }
+
+    const companyLogoPath = req.file.filename;
+    console.log("Image Saved at:", companyLogoPath);
+
     try {
-        let company = await Company.findById(req.company.id, { password: 0, otpCount: 0, deletedAt: 0, updatedAt: 0 });
-        if (company) {
-            if (otp === company.otp) {
-                if (company.status === 'Blocked') {
-                    return res.status(206).json({
-                        meta: {
-                            statusCode: 206,
-                            status: false,
-                            message: `Your account has been blocked!`
-                        }
-                    });
-                } else if (company.status === 'Deleted') {
-                    return res.status(206).json({
-                        meta: {
-                            statusCode: 206,
-                            status: false,
-                            message: `Your account has been deleted!`
-                        }
-                    });
-                } else {
-                    await Company.findByIdAndUpdate(req.company.id, { $set: { isEmailVerify: true } });
-                    company.isEmailVerify = true;
-                    const payload = { company: { id: company.id, status: company.status } };
-                    const token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') });
-                    return res.status(200).json({
-                        data: {
-                            company,
-                            token
-                        },
-                        meta: {
-                            statusCode: 200,
-                            status: true,
-                            message: `Successfully verified email`
-                        }
-                    });
-                }
-            } else {
-                return res.status(400).json({
-                    meta: {
-                        statusCode: 400,
-                        status: false,
-                        message: "OTP is not valid!"
-                    }
-                });
-            }
-        } else {
-            return res.status(400).json({
+        let existingCompany = await Company.findOne({ email });
+
+        if (existingCompany) {
+            return res.status(409).json({
                 meta: {
-                    statusCode: 400,
+                    statusCode: 409,
                     status: false,
-                    message: "Company not found!"
+                    message: "Email already in use!"
                 }
             });
         }
+
+        const otp = generateOtp();
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const authToken = jwt.sign(
+            { email, password: hashedPassword, companyLogo: companyLogoPath, otpCount: 1 },
+            config.get("AuthSecret"),
+            { expiresIn: "1h" }
+        );
+
+        const otpToken = jwt.sign(
+            { email, otp, password: hashedPassword, companyLogo: companyLogoPath, otpCount: 1 },
+            config.get("OtpSecret"),
+            { expiresIn: "2m" }
+        );
+
+        await sendOtpEmail(email, otp);
+
+        return res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "OTP sent successfully. Verify within 2 minutes."
+            },
+            data: {
+                authToken,
+                otpToken,
+                companyLogo: `${config.get("serverBaseUrl")}/${companyLogoPath}`
+            }
+        });
+
     } catch (error) {
-        console.error("Error in verifying company OTP:", error);
+        console.error("Error in sendOtp:", error);
         return res.status(500).json({
             meta: {
                 statusCode: 500,
                 status: false,
-                message: "Internal Server Error!"
+                message: "Internal Server Error"
             }
         });
     }
 };
 
 
-exports.registerCompany = async (req, res) => {
-    const { firstName, secondName, companyName, companySize, industry, companyWebsite, phoneNumber, heardAboutUs } = req.body;
 
-    const updateFields = {};
+exports.verifySignupOtp = async (req, res) => {
+    const otpToken = req.header("x-auth-token");
 
-    if (firstName) updateFields.firstName = firstName;
-    if (secondName) updateFields.secondName = secondName;
-    if (companyName) updateFields.companyName = companyName;
-    if (companySize) updateFields.companySize = companySize;
-    if (industry) updateFields.industry = industry;
-    if (companyWebsite) updateFields.companyWebsite = companyWebsite;
-    if (phoneNumber) updateFields.phoneNumber = phoneNumber;
-    if (heardAboutUs) updateFields.heardAboutUs = heardAboutUs;
+    if (!otpToken) {
+        console.error("No OTP Token Provided");
+        return res.status(401).json({
+            meta: {
+                statusCode: 401,
+                status: false,
+                message: "No OTP Token provided.",
+            },
+        });
+    }
 
     try {
-        let company = await Company.findByIdAndUpdate(
-            req.company.id,
-            {
-                $set: updateFields
+        console.log("Decoding OTP Token...");
+        const decoded = jwt.verify(otpToken, config.get("OtpSecret"));
+
+        console.log("Decoded OTP Token:", decoded);
+
+        if (!decoded.email || !decoded.otp) {
+            console.error("Decoded Token Missing Fields:", decoded);
+            return res.status(401).json({
+                meta: {
+                    statusCode: 401,
+                    status: false,
+                    message: "Invalid or expired OTP token!",
+                },
+            });
+        }
+
+        const { otp } = req.body;
+        if (!otp) {
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "OTP is required",
+                },
+            });
+        }
+
+        if (otp !== decoded.otp) {
+            console.error("Incorrect OTP!");
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Incorrect OTP!",
+                },
+            });
+        }
+
+        let company = await Company.findOne({ email: decoded.email });
+
+        if (!company) {
+            console.log("Creating new company after OTP verification...");
+
+            company = new Company({
+                email: decoded.email,
+                password: decoded.password,
+                companyLogo: decoded.companyLogo,
+                isEmailVerified: true,
+                companyRefId: uuidv4(),
+            });
+
+            await company.save();
+        } else {
+            console.log("🔹 Company Already Exists. Updating verification status...");
+            company.isEmailVerified = true;
+            await company.save();
+        }
+
+        const authPayload = { email: company.email, companyId: company._id };
+        const authToken = jwt.sign(authPayload, config.get("jwtSecret"), { expiresIn: "20m" });
+
+        return res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "✅ Email successfully verified! Company created.",
             },
-            { new: true }
-        );
-        const payload = { company: { id: company.id } };
-        res.status(200).json({
             data: {
-                company: company,
+                authToken,
+                company: {
+                    email: company.email,
+                    companyLogo: `${config.get("serverBaseUrl")}/${company.companyLogo}`, // ✅ Return full URL
+                    isEmailVerified: company.isEmailVerified,
+                    companyRefId: company.companyRefId,
+                },
             },
-            meta: { statusCode: 200, status: true, message: 'Successfully Updated!' }
         });
+
     } catch (error) {
-        res.status(500).json({
+        console.error("OTP Verification Error:", error);
+
+        if (error.name === "TokenExpiredError") {
+            return res.status(401).json({
+                meta: {
+                    statusCode: 401,
+                    status: false,
+                    message: "OTP token has expired! Please request a new one.",
+                },
+            });
+        }
+
+        return res.status(500).json({
             meta: {
                 statusCode: 500,
                 status: false,
-                message: 'Internal server error'
-            }
+                message: "Internal server error.",
+            },
+        });
+    }
+};
+
+
+
+exports.registerCompany = async (req, res) => {
+    const { firstName, secondName, companyName, industry, phoneNumber, companyWebsite, companySize, heardAboutUs } = req.body;
+    const authToken = req.header("x-auth-token");
+
+    if (!authToken) {
+        return res.status(401).json({
+            meta: {
+                statusCode: 401,
+                status: false,
+                message: "No token provided. Authorization denied.",
+            },
+        });
+    }
+
+    try {
+        const decoded = jwt.verify(authToken, config.get("jwtSecret"));
+
+        if (!decoded || !decoded.companyId) {
+            return res.status(401).json({
+                meta: {
+                    statusCode: 401,
+                    status: false,
+                    message: "Invalid token. Company ID missing.",
+                },
+            });
+        }
+
+        let company = await Company.findById(decoded.companyId);
+
+        if (!company) {
+            return res.status(404).json({
+                meta: {
+                    statusCode: 404,
+                    status: false,
+                    message: "Company not found!",
+                },
+            });
+        }
+
+        const schema = Joi.object({
+            firstName: Joi.string().min(2).max(30).required().messages({
+                "string.empty": "First Name is required",
+                "string.min": "First Name must be at least 2 characters",
+                "string.max": "First Name cannot exceed 30 characters"
+            }),
+            secondName: Joi.string().min(2).max(30).required().messages({
+                "string.empty": "Last Name is required",
+                "string.min": "Last Name must be at least 2 characters",
+                "string.max": "Last Name cannot exceed 30 characters"
+            }),
+            companyName: Joi.string().min(2).max(50).required().messages({
+                "string.empty": "Company Name is required",
+                "string.min": "Company Name must be at least 2 characters",
+                "string.max": "Company Name cannot exceed 50 characters"
+            }),
+            industry: Joi.string().required().messages({
+                "string.empty": "Industry is required",
+            }),
+            phoneNumber: Joi.string()
+        .pattern(/^\+?\d{10,15}$/) // ✅ Allows numbers with optional '+'
+        .required()
+        .messages({
+            "string.empty": "Phone Number is required",
+            "string.pattern.base": "Phone Number must be 10-15 digits and can start with '+'",
+            "string.min": "Phone Number must be at least 10 digits",
+            "string.max": "Phone Number cannot exceed 15 digits"
+        }),
+            companyWebsite: Joi.string().uri().required().messages({
+                "string.empty": "Company Website is required",
+                "string.uri": "Invalid website URL format"
+            }),
+            companySize: Joi.string().valid("1 to 10", "11 to 30", "31 to 50", "51 to 100", "101 to 500", "501 to 1000", "1000+").required().messages({
+                "string.empty": "Company Size is required",
+                "any.only": "Invalid Company Size selection"
+            }),
+            heardAboutUs: Joi.string().required().messages({
+                "string.empty": "How you heard about us is required",
+            })
+        });
+
+        const { error } = schema.validate(req.body, { abortEarly: false });
+        if (error) {
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Validation Error",
+                    errors: error.details.map((err) => err.message),
+                },
+            });
+        }
+
+        Object.assign(company, { firstName, secondName, companyName, industry, phoneNumber, companyWebsite, companySize, heardAboutUs });
+        await company.save();
+
+        return res.status(201).json({
+            meta: {
+                statusCode: 201,
+                status: true,
+                message: "✅ Company registered successfully!",
+            },
+            data: {
+                email: company.email,
+                firstName: company.firstName,
+                secondName: company.secondName,
+                companyName: company.companyName,
+                industry: company.industry,
+                phoneNumber: company.phoneNumber,
+                companyWebsite: company.companyWebsite,
+                companySize: company.companySize,
+                heardAboutUs: company.heardAboutUs,
+            },
+        });
+
+    } catch (error) {
+        console.error("Error registering company:", error);
+
+        if (error.name === "JsonWebTokenError") {
+            return res.status(400).json({
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Invalid token provided!",
+                },
+            });
+        }
+        if (error.name === "TokenExpiredError") {
+            return res.status(401).json({
+                meta: {
+                    statusCode: 401,
+                    status: false,
+                    message: "Token expired. Please log in again.",
+                },
+            });
+        }
+
+        return res.status(500).json({
+            meta: {
+                statusCode: 500,
+                status: false,
+                message: "Internal Server Error",
+            },
         });
     }
 };
@@ -296,10 +473,13 @@ exports.login = async (req, res) => {
                 meta: { statusCode: 400, status: false, message: "Invalid credentials", },
             });
         }
+        const baseUrl = `${req.protocol}://${req.get("host")}/uploads/images/`;
+
         const data = {
             _id: company._id,
             email: company.email,
             companyName: company.companyName,
+            companyLogo: company.companyLogo ? baseUrl + company.companyLogo : null,
             status: company.status,
             companySize: company.companySize,
             phoneNumber: company.phoneNumber,
@@ -310,6 +490,8 @@ exports.login = async (req, res) => {
             companyRefId: company.companyRefId,
 
         }
+        // console.log("Company Logo URL Sent to Frontend:", data.companyLogo); // ✅ Debugging
+
         const payload = { store: { id: company.id, status: company['status'] } }
         let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
         res.status(200).json({ meta: { statusCode: 200, status: true, message: "Login successful", }, data: { token: token, company: data }, });
