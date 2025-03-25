@@ -31,18 +31,15 @@ const companySchema = mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    firstName: {
-        type: String,
-    },
-    secondName: {
-        type: String,
+    foundingYear: {
+        type: Number,
     },
     companyName: {
         type: String,
     },
-    companyLogo: {
+    companyLogo: { type: String, required: false },
+    location: {
         type: String,
-        required: true
     },
     companySize: {
         type: String

@@ -11,8 +11,6 @@ const crypto = require("crypto");
 const Token = require('../models/TokenSchema');
 const nodemailer = require("nodemailer");
 
-
-
 const employeeSchema = Joi.object({
   firstName: Joi.string().min(1).required().messages({
     'string.base': 'First name should be a string',
@@ -30,7 +28,7 @@ const employeeSchema = Joi.object({
   phoneNumber: Joi.string().optional(),
   country: Joi.string().optional(),
   city: Joi.string().optional(),
-  about: Joi.string().optional(),
+  about: Joi.string().allow('').optional(),
   education: Joi.array().items(
     Joi.object({
       levelOfEducation: Joi.string().required(),
@@ -209,6 +207,7 @@ exports.addEmployee = async (req, res) => {
       const newEmployee = new Employee({
         firstName,
         lastName,
+        about,
         country,
         city,
         phoneNumber,
@@ -418,15 +417,17 @@ exports.getEmployeeVerificationRequests = async (req, res) => {
 
 exports.updateVerificationStatus = async (req, res) => {
   try {
-    const { employeeId, requestId } = req.params;
+    const { employeeId, requestId } = req.params; // Make sure both employeeId and requestId are available here
     const { status } = req.body;
 
+    // Validate that the status is either "Approved" or "Rejected"
     if (!["Approved", "Rejected"].includes(status)) {
       return res.status(400).json({
         meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
       });
     }
 
+    // Find the employee by ID
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return res.status(404).json({
@@ -434,17 +435,26 @@ exports.updateVerificationStatus = async (req, res) => {
       });
     }
 
+    // Log Employee and Verification Requests for debugging
+    console.log("Employee Data:", employee);
+    console.log("Employee Verification Requests:", employee.verificationRequests);
+    console.log("Request ID:", requestId);
+
     // Find the verification request by ID
     const request = employee.verificationRequests.find(req => req._id.toString() === requestId);
+    console.log("Found Request:", request);
+
     if (!request) {
       return res.status(404).json({
         meta: { statusCode: 404, status: false, message: "Verification request not found." },
       });
     }
 
+    // Update the status of the request
     request.status = status;
     await employee.save();
 
+    // Return success response
     return res.status(200).json({
       meta: { statusCode: 200, status: true, message: `Request ${status} successfully.` },
     });
@@ -573,8 +583,20 @@ exports.getEmployeesByCompany = async (req, res) => {
       });
     }
 
-    const blockedEmployees = employees.filter(emp => emp.isBlocked === true);
-    const unblockedEmployees = employees.filter(emp => emp.isBlocked === false);
+    // Filter employees based on company-specific blocks
+    const blockedEmployees = [];
+    const unblockedEmployees = [];
+
+    employees.forEach(employee => {
+      // Check if employee has a companyBlock for this specific company
+      const companyBlock = employee.companyBlocks?.find(block => block.companyRefId === companyRefId);
+      
+      if (companyBlock && companyBlock.isBlocked) {
+        blockedEmployees.push(employee);
+      } else {
+        unblockedEmployees.push(employee);
+      }
+    });
 
     res.status(200).json({
       meta: {
@@ -647,9 +669,17 @@ exports.getCompanies = async (req, res) => {
 
 exports.blockEmployee = async (req, res) => {
   const { employeeId } = req.params;
-  const { isBlocked } = req.body;
+  const { isBlocked, comment, companyRefId } = req.body;
+
+  console.log("companyRefId in back-end:", companyRefId);
 
   try {
+    if (!companyRefId) {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: "companyRefId is required." }
+      });
+    }
+
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return res.status(404).json({
@@ -657,11 +687,31 @@ exports.blockEmployee = async (req, res) => {
       });
     }
 
-    employee.isBlocked = isBlocked;
+    if (!employee.companyBlocks) {
+      employee.companyBlocks = [];
+    }
+
+    let companyBlock = employee.companyBlocks.find(block => block.companyRefId === companyRefId);
+
+    if (companyBlock) {
+      companyBlock.isBlocked = isBlocked;
+      companyBlock.comment = comment;
+    } else {
+      employee.companyBlocks.push({
+        companyRefId: companyRefId,
+        isBlocked: isBlocked,
+        comment: comment,
+      });
+    }
+
     await employee.save();
 
     res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully.` }
+      meta: { 
+        statusCode: 200, 
+        status: true, 
+        message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully.` 
+      }
     });
   } catch (error) {
     console.error("Error blocking employee:", error);
@@ -961,7 +1011,7 @@ exports.generateAndSendLink = async (req, res) => {
       return res.status(400).json({
         meta: {
           status: "error",
-          message: "Email is already registered.",
+          message: "Email is already registered.",  
         },
       });
     }
@@ -995,6 +1045,104 @@ exports.generateAndSendLink = async (req, res) => {
         status: "error",
         message: "Error generating or sending the registration link.",
       },
+    });
+  }
+};
+
+// Add this function to your employee controller file
+
+exports.getEmployeeRatings = async (req, res) => {
+  const { employeeId } = req.params;
+  
+  try {
+    const employee = await Employee.findById(employeeId);
+    
+    if (!employee) {
+      return res.status(404).json({
+        meta: {
+          statusCode: 404,
+          status: false,
+          message: "Employee not found with the given ID."
+        },
+        data: null
+      });
+    }
+    
+    const ratings = employee.ratings || [];
+    
+    let averageRating = 0;
+    if (ratings.length > 0) {
+      const totalRating = ratings.reduce((sum, rating) => sum + rating.rating, 0);
+      averageRating = (totalRating / ratings.length).toFixed(1);
+    }
+    
+    const approvedRatings = ratings.filter(rating => rating.status === "Approved");
+    
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Employee ratings retrieved successfully."
+      },
+      data: {
+        averageRating,
+        totalReviews: ratings.length,
+        approvedReviews: approvedRatings.length,
+        ratings: approvedRatings
+      }
+    });
+  } catch (error) {
+    console.error("Error retrieving employee ratings:", error);
+    return res.status(500).json({
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Server error. Could not retrieve employee ratings."
+      },
+      data: null
+    });
+  }
+};
+
+
+// Public API
+exports.getAllEmployees = async (req, res) => {
+  try {
+    // Find all employees
+    const employees = await Employee.find({})
+      // Remove sensitive information
+      .select('-password -otp -isEmailVerified -__v');
+
+    // Check if employees exist
+    if (!employees || employees.length === 0) {
+      return res.status(404).json({
+        meta: {
+          statusCode: 404,
+          status: false,
+          message: "No employees found."
+        },
+        data: []
+      });
+    }
+
+    // Return success response
+    res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Employees retrieved successfully.",
+        count: employees.length
+      },
+      data: employees
+    });
+  } catch (error) {
+    console.error("Error retrieving employees:", error);
+    res.status(500).json({
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Server error. Could not retrieve employees."
+      }
     });
   }
 };

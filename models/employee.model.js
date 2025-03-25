@@ -6,6 +6,7 @@ const employeeSchema = mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: false, minlength: 6 },
     about: { type: String, default: "" },
+    companyLogo: { type: String, required: false },
 
     country: { type: String, required: false },
     city: { type: String, required: false },
@@ -92,6 +93,14 @@ const employeeSchema = mongoose.Schema({
           }
         },
       ],
+      companyBlocks: [
+        {
+            companyRefId: { type: String },
+            isBlocked: { type: Boolean, default: false },
+          comment: { type: String, default: "" },
+        },
+      ],
+
 });
 
 module.exports = mongoose.model("Employee", employeeSchema);

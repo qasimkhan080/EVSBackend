@@ -46,15 +46,6 @@ exports.sendOtp = async (req, res) => {
         });
     }
 
-    if (!req.file) {
-        return res.status(400).json({
-            meta: { statusCode: 400, status: false, message: "Company logo is required." }
-        });
-    }
-
-    const companyLogoPath = req.file.filename;
-    console.log("Image Saved at:", companyLogoPath);
-
     try {
         let existingCompany = await Company.findOne({ email });
 
@@ -72,13 +63,13 @@ exports.sendOtp = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const authToken = jwt.sign(
-            { email, password: hashedPassword, companyLogo: companyLogoPath, otpCount: 1 },
+            { email, password: hashedPassword, otpCount: 1 },
             config.get("AuthSecret"),
             { expiresIn: "1h" }
         );
 
         const otpToken = jwt.sign(
-            { email, otp, password: hashedPassword, companyLogo: companyLogoPath, otpCount: 1 },
+            { email, otp, password: hashedPassword, otpCount: 1 },
             config.get("OtpSecret"),
             { expiresIn: "2m" }
         );
@@ -93,8 +84,7 @@ exports.sendOtp = async (req, res) => {
             },
             data: {
                 authToken,
-                otpToken,
-                companyLogo: `${config.get("serverBaseUrl")}/${companyLogoPath}`
+                otpToken
             }
         });
 
@@ -109,7 +99,6 @@ exports.sendOtp = async (req, res) => {
         });
     }
 };
-
 
 
 exports.verifySignupOtp = async (req, res) => {
@@ -173,7 +162,6 @@ exports.verifySignupOtp = async (req, res) => {
             company = new Company({
                 email: decoded.email,
                 password: decoded.password,
-                companyLogo: decoded.companyLogo,
                 isEmailVerified: true,
                 companyRefId: uuidv4(),
             });
@@ -198,7 +186,6 @@ exports.verifySignupOtp = async (req, res) => {
                 authToken,
                 company: {
                     email: company.email,
-                    companyLogo: `${config.get("serverBaseUrl")}/${company.companyLogo}`, // ✅ Return full URL
                     isEmailVerified: company.isEmailVerified,
                     companyRefId: company.companyRefId,
                 },
@@ -229,9 +216,18 @@ exports.verifySignupOtp = async (req, res) => {
 };
 
 
-
 exports.registerCompany = async (req, res) => {
-    const { firstName, secondName, companyName, industry, phoneNumber, companyWebsite, companySize, heardAboutUs } = req.body;
+    const {
+        companyName, 
+        location,
+        companySize,
+        industry,
+        companyWebsite,
+        phoneNumber,
+        foundingYear,
+        heardAboutUs
+    } = req.body;
+    
     const authToken = req.header("x-auth-token");
 
     if (!authToken) {
@@ -270,41 +266,47 @@ exports.registerCompany = async (req, res) => {
         }
 
         const schema = Joi.object({
-            firstName: Joi.string().min(2).max(30).required().messages({
-                "string.empty": "First Name is required",
-                "string.min": "First Name must be at least 2 characters",
-                "string.max": "First Name cannot exceed 30 characters"
-            }),
-            secondName: Joi.string().min(2).max(30).required().messages({
-                "string.empty": "Last Name is required",
-                "string.min": "Last Name must be at least 2 characters",
-                "string.max": "Last Name cannot exceed 30 characters"
-            }),
             companyName: Joi.string().min(2).max(50).required().messages({
                 "string.empty": "Company Name is required",
                 "string.min": "Company Name must be at least 2 characters",
                 "string.max": "Company Name cannot exceed 50 characters"
             }),
-            industry: Joi.string().required().messages({
-                "string.empty": "Industry is required",
-            }),
-            phoneNumber: Joi.string()
-        .pattern(/^\+?\d{10,15}$/) // ✅ Allows numbers with optional '+'
-        .required()
-        .messages({
-            "string.empty": "Phone Number is required",
-            "string.pattern.base": "Phone Number must be 10-15 digits and can start with '+'",
-            "string.min": "Phone Number must be at least 10 digits",
-            "string.max": "Phone Number cannot exceed 15 digits"
-        }),
-            companyWebsite: Joi.string().uri().required().messages({
-                "string.empty": "Company Website is required",
-                "string.uri": "Invalid website URL format"
+            location: Joi.string().required().messages({
+                "string.empty": "Location is required",
             }),
             companySize: Joi.string().valid("1 to 10", "11 to 30", "31 to 50", "51 to 100", "101 to 500", "501 to 1000", "1000+").required().messages({
                 "string.empty": "Company Size is required",
                 "any.only": "Invalid Company Size selection"
             }),
+            industry: Joi.string().required().messages({
+                "string.empty": "Industry is required",
+            }),
+            
+            companyWebsite: Joi.string().uri().required().messages({
+                "string.empty": "Company Website is required",
+                "string.uri": "Invalid website URL format"
+            }),
+            phoneNumber: Joi.string()
+                .pattern(/^\+?\d{10,15}$/)
+                .required()
+                .messages({
+                    "string.empty": "Phone Number is required",
+                    "string.pattern.base": "Phone Number must be 10-15 digits and can start with '+'",
+                    "string.min": "Phone Number must be at least 10 digits",
+                    "string.max": "Phone Number cannot exceed 15 digits"
+                }),
+            foundingYear: Joi.number()
+                .integer()
+                .min(1900)
+                .max(new Date().getFullYear())
+                .required()
+                .messages({
+                    "number.base": "Founding Year must be a number",
+                    "number.integer": "Founding Year must be a whole number",
+                    "number.min": "Founding Year must be at least 1900",
+                    "number.max": `Founding Year cannot be later than ${new Date().getFullYear()}`,
+                    "any.required": "Founding Year is required"
+                }),
             heardAboutUs: Joi.string().required().messages({
                 "string.empty": "How you heard about us is required",
             })
@@ -322,7 +324,17 @@ exports.registerCompany = async (req, res) => {
             });
         }
 
-        Object.assign(company, { firstName, secondName, companyName, industry, phoneNumber, companyWebsite, companySize, heardAboutUs });
+        Object.assign(company, { 
+            companyName, 
+            location,
+            companySize,
+            industry, 
+            companyWebsite, 
+            phoneNumber, 
+            foundingYear,
+            heardAboutUs 
+        });
+        
         await company.save();
 
         return res.status(201).json({
@@ -333,13 +345,13 @@ exports.registerCompany = async (req, res) => {
             },
             data: {
                 email: company.email,
-                firstName: company.firstName,
-                secondName: company.secondName,
                 companyName: company.companyName,
-                industry: company.industry,
-                phoneNumber: company.phoneNumber,
-                companyWebsite: company.companyWebsite,
+                location: company.location,
                 companySize: company.companySize,
+                industry: company.industry,
+                companyWebsite: company.companyWebsite,
+                phoneNumber: company.phoneNumber,
+                foundingYear: company.foundingYear,
                 heardAboutUs: company.heardAboutUs,
             },
         });
@@ -577,4 +589,40 @@ exports.updateVerificationStatus = async (req, res) => {
         });
     }
 };
+
+// //Public API
+// exports.getAllCompanies = async (req, res) => {
+//     try {
+//       const companies = await Company.find({});
+  
+//       if (!companies || companies.length === 0) {
+//         return res.status(404).json({
+//           meta: { 
+//             statusCode: 404, 
+//             status: false, 
+//             message: "No companies found." 
+//           },
+//           data: []
+//         });
+//       }
+  
+//       res.status(200).json({
+//         meta: { 
+//           statusCode: 200, 
+//           status: true, 
+//           message: "Companies retrieved successfully." 
+//         },
+//         data: companies
+//       });
+//     } catch (error) {
+//       console.error("Error retrieving companies:", error);
+//       res.status(500).json({
+//         meta: { 
+//           statusCode: 500, 
+//           status: false, 
+//           message: "Server error. Could not retrieve companies." 
+//         }
+//       });
+//     }
+//   };
 
