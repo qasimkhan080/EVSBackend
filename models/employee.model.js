@@ -7,7 +7,8 @@ const employeeSchema = mongoose.Schema({
     password: { type: String, required: false, minlength: 6 },
     about: { type: String, default: "" },
     companyLogo: { type: String, required: false },
-
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
     country: { type: String, required: false },
     city: { type: String, required: false },
     phoneNumber: { type: String, required: false },
