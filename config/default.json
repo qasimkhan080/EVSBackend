@@ -8,6 +8,7 @@
   "OtpSecret": "company.com Otp Secret",
   "AuthSecret": "company.com Auth Secret",
   "frontendBaseUrl": "http://localhost:3000",
-  "serverBaseUrl": "http://localhost:5000"
+  "serverBaseUrl": "http://localhost:5000",
+  "GOOGLE_CLIENT_ID" : "434850096597-bqp1hkmfrtm4b8jqrpv9gkr8a5gm05tr.apps.googleusercontent.com"
 
 }

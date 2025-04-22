@@ -20,6 +20,7 @@ router.get("/verification-requests/:companyId", authController.getVerificationRe
 router.patch("/update-verification-status/:employeeId/:requestId", authController.updateVerificationStatus);
 router.post("/forgot-password", passwordResetController.forgotPassword);
 router.post("/reset-password/:token", passwordResetController.resetPassword);
+
 // Public Routes
 // router.get("/companies", authController.getAllCompanies);
 
