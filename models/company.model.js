@@ -85,8 +85,11 @@ const companySchema = mongoose.Schema({
             description: String,
             from: Date,
             to: Date,
-            status: { type: String, default: "Pending" },
-            requestedAt: { type: Date, default: Date.now },
+            status: {
+                type: String,
+                enum: ['Approved', 'Pending', 'Rejected'],
+                default: 'Pending'
+            },            requestedAt: { type: Date, default: Date.now },
         },
     ],
 

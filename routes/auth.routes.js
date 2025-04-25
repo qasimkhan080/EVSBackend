@@ -16,10 +16,11 @@ router.post("/resend-otp", resendOtpController.resendOtp);
 router.post("/login", authController.login);
 router.get("/:companyId", authController.getCompanyById);
 router.delete("/:companyId", authController.deleteCompany);
-router.get("/verification-requests/:companyId", authController.getVerificationRequestsForCompany);
+router.get("/verification-requests/:companyRefId", authController.getVerificationRequestsForCompany);
 router.patch("/update-verification-status/:employeeId/:requestId", authController.updateVerificationStatus);
 router.post("/forgot-password", passwordResetController.forgotPassword);
 router.post("/reset-password/:token", passwordResetController.resetPassword);
+router.get("/verification-stats/:companyRefId", authController.getVerificationStats);
 
 // Public Routes
 // router.get("/companies", authController.getAllCompanies);

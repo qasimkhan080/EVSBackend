@@ -77,30 +77,34 @@ const employeeSchema = mongoose.Schema({
             description: String,
             from: String,
             to: String,
-            status: { type: String, default: "Pending" },
+            status: {
+                type: String,
+                enum: ['Approved', 'Pending', 'Rejected'],
+                default: 'Pending'
+            },
             requestedAt: { type: Date, default: Date.now },
         },
     ],
-    
+
     ratings: [
         {
-          rating: Number,
-          comment: String,
-          selectedOptions: [String],
-          date: { type: Date, default: Date.now },
-          status: {
-            type: String,
-            enum: ['Approved', 'Rejected', 'pending'],
-          }
+            rating: Number,
+            comment: String,
+            selectedOptions: [String],
+            date: { type: Date, default: Date.now },
+            status: {
+                type: String,
+                enum: ['Approved', 'Rejected', 'pending'],
+            }
         },
-      ],
-      companyBlocks: [
+    ],
+    companyBlocks: [
         {
             companyRefId: { type: String },
             isBlocked: { type: Boolean, default: false },
-          comment: { type: String, default: "" },
+            comment: { type: String, default: "" },
         },
-      ],
+    ],
 
 });
 

@@ -406,7 +406,7 @@ exports.verifyEmployeeOtp = async (req, res) => {
 
 exports.sendVerificationRequest = async (req, res) => {
   const { employeeId, companyId } = req.params;
-  const { designation, skills, description, from, to } = req.body;
+  const { designation, skills, description, from, to, userName, userEmail } = req.body;
 
   try {
     if (!designation || !skills || !description || !from) {
@@ -433,33 +433,43 @@ exports.sendVerificationRequest = async (req, res) => {
       });
     }
 
-    const userName = `${employee.firstName} ${employee.lastName}`;
-    const userEmail = employee.email;
+    // Create a unique ID for this verification request
+    const requestId = new mongoose.Types.ObjectId();
 
+    // Create the request object with consistent structure
     const verificationRequest = {
-      _id: new mongoose.Types.ObjectId(),
+      _id: requestId,
       companyId,
       companyName: company.companyName,
       employeeId,
-      employeeName: userName,
-      employeeEmail: userEmail,
+      employeeName: userName || `${employee.firstName} ${employee.lastName}`,
+      employeeEmail: userEmail || employee.email,
       designation,
       skills,
       description,
       from,
       to,
-      status: "Pending",
+      status: "Pending", // Default status is Pending
       requestedAt: new Date(),
     };
 
+    // Add to employee's verification requests
     employee.verificationRequests.push(verificationRequest);
     await employee.save();
 
+    // Add to company's received requests
     company.receivedRequests.push(verificationRequest);
     await company.save();
 
     res.status(200).json({
-      meta: { statusCode: 200, status: true, message: "Verification request sent successfully." },
+      meta: { 
+        statusCode: 200, 
+        status: true, 
+        message: "Verification request sent successfully." 
+      },
+      data: {
+        requestId: requestId
+      }
     });
   } catch (error) {
     console.error("Error sending verification request:", error);
@@ -502,48 +512,41 @@ exports.getEmployeeVerificationRequests = async (req, res) => {
 };
 
 
+// This is your controller function that gets called
 exports.updateVerificationStatus = async (req, res) => {
   try {
-    const { employeeId, requestId } = req.params; // Make sure both employeeId and requestId are available here
+    const { employeeId, requestId } = req.params;
     const { status } = req.body;
-
-    // Validate that the status is either "Approved" or "Rejected"
-    if (!["Approved", "Rejected"].includes(status)) {
-      return res.status(400).json({
-        meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
-      });
-    }
-
-    // Find the employee by ID
+    
+    // Find employee and their verification request
     const employee = await Employee.findById(employeeId);
-    if (!employee) {
-      return res.status(404).json({
-        meta: { statusCode: 404, status: false, message: "Employee not found." },
-      });
-    }
-
-    // Log Employee and Verification Requests for debugging
-    console.log("Employee Data:", employee);
-    console.log("Employee Verification Requests:", employee.verificationRequests);
-    console.log("Request ID:", requestId);
-
-    // Find the verification request by ID
-    const request = employee.verificationRequests.find(req => req._id.toString() === requestId);
-    console.log("Found Request:", request);
-
-    if (!request) {
-      return res.status(404).json({
-        meta: { statusCode: 404, status: false, message: "Verification request not found." },
-      });
-    }
-
-    // Update the status of the request
-    request.status = status;
+    
+    // Find the request in employee's verificationRequests
+    const employeeRequestIndex = employee.verificationRequests.findIndex(
+      req => req._id.toString() === requestId
+    );
+    
+    // Get companyId from the request
+    const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
+    
+    // Find the company
+    const company = await Company.findById(companyId);
+    
+    // Find the request in company's receivedRequests
+    const companyRequestIndex = company.receivedRequests.findIndex(
+      req => req._id.toString() === requestId
+    );
+    
+    // Update status in both records
+    employee.verificationRequests[employeeRequestIndex].status = status;
+    company.receivedRequests[companyRequestIndex].status = status;
+    
+    // Save both documents
     await employee.save();
-
-    // Return success response
+    await company.save();
+    
     return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Request ${status} successfully.` },
+      meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
     });
   } catch (error) {
     console.error("Error updating verification status:", error);

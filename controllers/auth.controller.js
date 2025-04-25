@@ -287,7 +287,7 @@ exports.registerCompany = async (req, res) => {
                 "string.uri": "Invalid website URL format"
             }),
             phoneNumber: Joi.string()
-                .pattern(/^\+?\d{10,15}$/)
+                .pattern(/^\+?\d{09,15}$/)
                 .required()
                 .messages({
                     "string.empty": "Phone Number is required",
@@ -516,28 +516,41 @@ exports.login = async (req, res) => {
 
 
 exports.getVerificationRequestsForCompany = async (req, res) => {
-    const { companyId } = req.params;
+    const { companyRefId } = req.params;
+
+    if (!companyRefId) {
+        return res.status(400).json({
+            meta: {
+                statusCode: 400,
+                status: false,
+                message: "Company reference ID is required",
+            },
+        });
+    }
 
     try {
-        const company = await Company.findOne({ companyRefId: companyId });
+        const company = await Company.findOne({ companyRefId });
 
         if (!company) {
             return res.status(404).json({
                 meta: {
                     statusCode: 404,
                     status: false,
-                    message: "Company not found or has no received requests.",
+                    message: "Company not found",
                 },
             });
         }
 
+        // Check if receivedRequests field exists
+        const receivedRequests = company.receivedRequests || [];
+        
         res.status(200).json({
             meta: {
                 statusCode: 200,
                 status: true,
                 message: "Verification requests retrieved successfully.",
             },
-            data: company.receivedRequests || [],
+            data: receivedRequests,
         });
     } catch (error) {
         console.error("Error fetching verification requests for company:", error);
@@ -554,41 +567,119 @@ exports.getVerificationRequestsForCompany = async (req, res) => {
 
 exports.updateVerificationStatus = async (req, res) => {
     try {
-        const { employeeId, requestId } = req.params;
-        const { status } = req.body;
-
-        if (!["Approved", "Rejected"].includes(status)) {
-            return res.status(400).json({
-                meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
-            });
-        }
-
-        const employee = await employeeModel.findById(employeeId);
-        if (!employee) {
-            return res.status(404).json({
-                meta: { statusCode: 404, status: false, message: "Employee not found." },
-            });
-        }
-
-        const requestIndex = employee.verificationRequests.findIndex(req => req._id.toString() === requestId);
-        if (requestIndex === -1) {
-            return res.status(404).json({
-                meta: { statusCode: 404, status: false, message: "Verification request not found." },
-            });
-        }
-
-        employee.verificationRequests[requestIndex].status = status;
-        await employee.save();
-
-        return res.status(200).json({
-            meta: { statusCode: 200, status: true, message: `Request ${status} successfully.` },
+      const { employeeId, requestId } = req.params;
+      const { status } = req.body;
+  
+      if (!["Approved", "Rejected"].includes(status)) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
         });
+      }
+  
+      // Find the employee
+      const employee = await Employee.findById(employeeId);
+      if (!employee) {
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Employee not found." },
+        });
+      }
+  
+      // Find the request in employee's verificationRequests
+      const employeeRequestIndex = employee.verificationRequests.findIndex(
+        req => req._id.toString() === requestId
+      );
+      
+      if (employeeRequestIndex === -1) {
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Verification request not found in employee records." },
+        });
+      }
+  
+      // Get the companyId from the request
+      const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
+      
+      // Find the company
+      const company = await Company.findById(companyId);
+      if (!company) {
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Company not found." },
+        });
+      }
+  
+      // Find the request in company's receivedRequests
+      const companyRequestIndex = company.receivedRequests.findIndex(
+        req => req._id.toString() === requestId
+      );
+      
+      if (companyRequestIndex === -1) {
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Verification request not found in company records." },
+        });
+      }
+  
+      // Update status in both employee and company records
+      employee.verificationRequests[employeeRequestIndex].status = status;
+      company.receivedRequests[companyRequestIndex].status = status;
+  
+      // Save both documents
+      await employee.save();
+      await company.save();
+  
+      return res.status(200).json({
+        meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
+      });
     } catch (error) {
-        return res.status(500).json({
-            meta: { statusCode: 500, status: false, message: "Server error. Could not update status." },
-        });
+      console.error("Error updating verification status:", error);
+      return res.status(500).json({
+        meta: { statusCode: 500, status: false, message: "Server error. Could not update status." },
+      });
     }
-};
+  };
+exports.getVerificationStats = async (req, res) => {
+    try {
+      const { companyRefId } = req.params;
+      
+      if (!companyRefId) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Company reference ID is required" },
+        });
+      }
+  
+      const company = await Company.findOne({ companyRefId });
+      if (!company) {
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Company not found" },
+        });
+      }
+  
+      const requests = company.receivedRequests || [];
+      
+      // Count requests by status
+      const pending = requests.filter(req => req.status === "Pending").length;
+      const approved = requests.filter(req => req.status === "Approved").length;
+      const rejected = requests.filter(req => req.status === "Rejected").length;
+      
+      return res.status(200).json({
+        meta: {
+          statusCode: 200,
+          status: true,
+          message: "Verification statistics retrieved successfully",
+        },
+        data: {
+          total: requests.length,
+          pending,
+          approved,
+          rejected
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching verification stats:", error);
+      return res.status(500).json({
+        meta: { statusCode: 500, status: false, message: "Server error" },
+      });
+    }
+  };
+
 
 // //Public API
 // exports.getAllCompanies = async (req, res) => {
