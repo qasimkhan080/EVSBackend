@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
-
+const documentSchema = new mongoose.Schema({
+    type: { 
+        type: String, 
+        enum: ['banner', 'profilepic', 'resume', 'education', 'experienceletter', 'certificate'], 
+        required: true 
+    },
+    url: { type: String, required: true },
+    name: { type: String, required: true },
+    size: { type: Number, required: true },
+    uploadedAt: { type: Date, default: Date.now },
+    s3Key: { type: String, required: true },
+    uniqueId: { type: String }
+});
 const employeeSchema = mongoose.Schema({
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
@@ -105,6 +117,8 @@ const employeeSchema = mongoose.Schema({
             comment: { type: String, default: "" },
         },
     ],
+
+    documents: [documentSchema]
 
 });
 
