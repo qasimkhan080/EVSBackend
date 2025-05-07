@@ -8,7 +8,7 @@ const bodyParser = require('body-parser');
 const server = http.createServer(app);
 var cors = require('cors');
 const connectDB = require("./config/db")
-const uploadRoutes = require("./routes/upload.routes")
+const uploadRoutes = require("./routes/uplaod.routes")
 
 
 connectDB();
