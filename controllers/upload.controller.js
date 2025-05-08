@@ -1,12 +1,12 @@
-const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3'); // AWS SDK v3
+const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 const Employee = require('../models/employee.model');
+const Company = require('../models/company.model');
 const mongoose = require('mongoose');
 const config = require('config');
 const fs = require('fs');
 const path = require('path');
 
-// Create S3 client using AWS SDK v3
 const s3Client = new S3Client({
   region: config.get("AWS_REGION"),
   credentials: {
@@ -333,6 +333,7 @@ exports.uploadResume = async (req, res) => {
     });
   }
 };
+
 exports.uploadEducation = async (req, res) => {
     try {
       // Validate if file is uploaded
@@ -848,6 +849,7 @@ exports.deleteDocument = async (req, res) => {
   };
 
 // exports.deleteExperienceLetter = async (req, res) => {
+
 //   try {
 //     const { userId } = req.params;
 
@@ -901,3 +903,98 @@ exports.deleteDocument = async (req, res) => {
 //     });
 //   }
 // };
+
+
+
+
+
+exports.uploadCompanyProfileImage = async (req, res) => {
+    try {
+      // Validate if file is uploaded
+      if (!req.file) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "No profile image uploaded" }
+        });
+      }
+  
+      // Validate companyRefId
+      const { companyRefId } = req.body;
+      if (!companyRefId) {
+        if (req.file.path && !req.file.location) fs.unlinkSync(req.file.path);
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Valid Company RefId is required" }
+        });
+      }
+  
+      // Ensure the file is an image
+      if (!req.file.mimetype.startsWith('image/')) {
+        if (req.file.path && !req.file.location) fs.unlinkSync(req.file.path);
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Invalid file type. Only image files are allowed." }
+        });
+      }
+  
+      const isS3Upload = !!req.file.location;
+      const fileUrl = isS3Upload ? req.file.location : 
+        `${process.env.serverBaseUrl || 'http://localhost:5000'}/uploads/companyprofileimages/${req.file.filename}`;
+      const s3Key = req.file.key || req.file.filename;
+      const uniqueKey = `${Date.now()}_${uuidv4()}`;
+  
+      // Find the company by companyRefId
+      const company = await Company.findOne({ companyRefId });
+      if (!company) {
+        if (req.file.path && !req.file.location) fs.unlinkSync(req.file.path);
+        return res.status(404).json({
+          meta: { statusCode: 404, status: false, message: "Company not found" }
+        });
+      }
+  
+      // Check if the company already has a profile image and remove it
+      if (company.companyProfileImage) {
+        const previousImageS3Key = company.companyProfileImage.split('/').pop(); // Extract the file name from the URL
+  
+        try {
+          // Delete the existing profile image from S3 if it's an S3 upload
+          if (previousImageS3Key && isS3Upload) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: config.get("AWS_S3_BUCKET_NAME"),
+              Key: previousImageS3Key
+            }));
+          } else if (previousImageS3Key && !isS3Upload) {
+            const previousImagePath = path.join(__dirname, '../uploads/companyprofileimages', previousImageS3Key);
+            if (fs.existsSync(previousImagePath)) fs.unlinkSync(previousImagePath);
+          }
+        } catch (error) {
+          console.error("Error deleting previous profile image from S3:", error);
+        }
+      }
+  
+      // Update the company's profile image URL
+      company.companyProfileImage = fileUrl;
+      await company.save();
+  
+      return res.status(200).json({
+        meta: {
+          statusCode: 200,
+          status: true,
+          message: "Company profile image uploaded successfully"
+        },
+        data: {
+          fileUrl,
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          isS3Upload,
+          companyRefId,
+          uniqueId: uniqueKey
+        }
+      });
+  
+    } catch (error) {
+      console.error("Error uploading company profile image:", error);
+      if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
+      return res.status(500).json({
+        meta: { statusCode: 500, status: false, message: "Profile image upload failed: " + error.message }
+      });
+    }
+  };
+  

@@ -73,6 +73,10 @@ const companySchema = mongoose.Schema({
         type: Date,
         default: null
     },
+    companyProfileImage: {
+        type: String,
+        required: false
+    },
     receivedRequests: [
         {
 

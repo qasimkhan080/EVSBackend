@@ -14,7 +14,7 @@ router.put("/register-company", companyAuth, authController.registerCompany);
 router.post("/resend-otp", resendOtpController.resendOtp);
 // router.put("/signup-final-step", companyAuth, authController.signupFinalStep);
 router.post("/login", authController.login);
-router.get("/:companyId", authController.getCompanyById);
+router.get("/company-data/:companyRefId", authController.getCompanyByRefId);
 router.delete("/:companyId", authController.deleteCompany);
 router.get("/verification-requests/:companyRefId", authController.getVerificationRequestsForCompany);
 router.patch("/update-verification-status/:employeeId/:requestId", authController.updateVerificationStatus);

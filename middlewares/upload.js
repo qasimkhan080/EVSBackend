@@ -11,9 +11,9 @@ const experienceLetterDir = path.join(__dirname, "../uploads/experienceletter");
 const educationDir = path.join(__dirname, "../uploads/education");
 const certificateDir = path.join(__dirname, "../uploads/certificate");
 const profileImageDir = path.join(__dirname, "../uploads/profileimages");
-const companyLogoDir = path.join(__dirname, "../uploads/companylogos");
+const companyProfileImageDir = path.join(__dirname, "../uploads/companyprofileimages");  // Changed directory for company profile images
 
-[uploadDir, pdfUploadDir, experienceLetterDir, educationDir, certificateDir, profileImageDir, companyLogoDir].forEach(dir => {
+[uploadDir, pdfUploadDir, experienceLetterDir, educationDir, certificateDir, profileImageDir, companyProfileImageDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -98,18 +98,6 @@ const profileImageStorage = useS3
         filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
-const companyLogoStorage = useS3
-    ? multerS3({
-        s3,
-        bucket: config.get("AWS_S3_BUCKET_NAME"),
-        contentType: multerS3.AUTO_CONTENT_TYPE,
-        key: s3KeyGen('companylogos')
-    })
-    : multer.diskStorage({
-        destination: (req, file, cb) => cb(null, companyLogoDir),
-        filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
-    });
-
 const educationStorage = useS3
     ? multerS3({
         s3,
@@ -158,6 +146,19 @@ const experienceLetterStorage = useS3
         filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
+    const companyProfileImageStorage = useS3
+    ? multerS3({
+        s3,
+        bucket: config.get("AWS_S3_BUCKET_NAME"),
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: s3KeyGen('companyprofileimages') // Changed folder to 'companyprofileimages'
+    })
+    : multer.diskStorage({
+        destination: (req, file, cb) => cb(null, companyProfileImageDir), // Corrected the directory path
+        filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
+    });
+
+
 const upload = multer({ storage: defaultStorage });
 upload.banner = multer({
     storage: bannerStorage,
@@ -166,11 +167,6 @@ upload.banner = multer({
   });
 upload.profileImage = multer({
     storage: profileImageStorage,
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: imageFileFilter
-});
-upload.companyLogo = multer({
-    storage: companyLogoStorage,
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: imageFileFilter
 });
@@ -191,6 +187,12 @@ upload.education = multer({
 });
 upload.certificate = multer({
     storage: certificateStorage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: imageFileFilter
+});
+
+upload.companyProfileImage = multer({
+    storage: companyProfileImageStorage,
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: imageFileFilter
 });

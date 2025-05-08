@@ -389,11 +389,11 @@ exports.registerCompany = async (req, res) => {
 };
 
 
-exports.getCompanyById = async (req, res) => {
-    const { companyId } = req.params;
+exports.getCompanyByRefId = async (req, res) => {
+    const { companyRefId } = req.params;
 
     try {
-        const company = await Company.findById(companyId);
+        const company = await Company.findOne({ companyRefId }); // Use companyRefId to query the database
 
         if (!company) {
             return res.status(404).json({
