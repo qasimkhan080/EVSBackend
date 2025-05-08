@@ -660,7 +660,7 @@ exports.getEmployeesByCompany = async (req, res) => {
   const { companyRefId } = req.params;
 
   try {
-    const employees = await Employee.find({ companyRefId });
+    const employees = await Employee.find({ companyRefId }).lean();
 
     if (!employees || employees.length === 0) {
       return res.status(404).json({
@@ -672,12 +672,22 @@ exports.getEmployeesByCompany = async (req, res) => {
         data: [],
       });
     }
+    const processedEmployees = employees.map(employee => {
+      const profilePic = employee.documents?.find(doc => doc.type === 'profilepic');
+      return {
+        ...employee,
+        profileImage: profilePic?.url || null
+      };
+    });
+
 
     // Filter employees based on company-specific blocks
     const blockedEmployees = [];
     const unblockedEmployees = [];
 
-    employees.forEach(employee => {
+    processedEmployees.forEach(employee => {
+      console.log(`Employee ${employee._id} profile image:`, employee.profileImage); // Log individual images
+
       // Check if employee has a companyBlock for this specific company
       const companyBlock = employee.companyBlocks?.find(block => block.companyRefId === companyRefId);
 
@@ -696,7 +706,8 @@ exports.getEmployeesByCompany = async (req, res) => {
       },
       data: {
         blocked: blockedEmployees,
-        unblocked: unblockedEmployees
+        unblocked: unblockedEmployees,
+        
       },
     });
 
