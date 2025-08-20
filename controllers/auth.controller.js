@@ -9,7 +9,7 @@ const employeeModel = require('../models/employee.model');
 const { v4: uuidv4 } = require("uuid");
 
 exports.sendOtp = async (req, res) => {
-    console.log("📥 Received Payload:", req.body);
+    console.log("Received Payload:", req.body);
 
     const { email, password } = req.body;
 
@@ -180,7 +180,7 @@ exports.verifySignupOtp = async (req, res) => {
             meta: {
                 statusCode: 200,
                 status: true,
-                message: "✅ Email successfully verified! Company created.",
+                message: "Email successfully verified! Company created.",
             },
             data: {
                 authToken,
@@ -218,7 +218,7 @@ exports.verifySignupOtp = async (req, res) => {
 
 exports.registerCompany = async (req, res) => {
     const {
-        companyName, 
+        companyName,
         location,
         companySize,
         industry,
@@ -227,7 +227,7 @@ exports.registerCompany = async (req, res) => {
         foundingYear,
         heardAboutUs
     } = req.body;
-    
+
     const authToken = req.header("x-auth-token");
 
     if (!authToken) {
@@ -281,7 +281,7 @@ exports.registerCompany = async (req, res) => {
             industry: Joi.string().required().messages({
                 "string.empty": "Industry is required",
             }),
-            
+
             companyWebsite: Joi.string().uri().required().messages({
                 "string.empty": "Company Website is required",
                 "string.uri": "Invalid website URL format"
@@ -324,24 +324,24 @@ exports.registerCompany = async (req, res) => {
             });
         }
 
-        Object.assign(company, { 
-            companyName, 
+        Object.assign(company, {
+            companyName,
             location,
             companySize,
-            industry, 
-            companyWebsite, 
-            phoneNumber, 
+            industry,
+            companyWebsite,
+            phoneNumber,
             foundingYear,
-            heardAboutUs 
+            heardAboutUs
         });
-        
+
         await company.save();
 
         return res.status(201).json({
             meta: {
                 statusCode: 201,
                 status: true,
-                message: "✅ Company registered successfully!",
+                message: "Company registered successfully!",
             },
             data: {
                 email: company.email,
@@ -393,7 +393,7 @@ exports.getCompanyByRefId = async (req, res) => {
     const { companyRefId } = req.params;
 
     try {
-        const company = await Company.findOne({ companyRefId }); // Use companyRefId to query the database
+        const company = await Company.findOne({ companyRefId });
 
         if (!company) {
             return res.status(404).json({
@@ -502,7 +502,6 @@ exports.login = async (req, res) => {
             companyRefId: company.companyRefId,
 
         }
-        // console.log("Company Logo URL Sent to Frontend:", data.companyLogo); // ✅ Debugging
 
         const payload = { store: { id: company.id, status: company['status'] } }
         let token = jwt.sign(payload, config.get('jwtSecret'), { expiresIn: config.get('TokenExpire') })
@@ -541,9 +540,8 @@ exports.getVerificationRequestsForCompany = async (req, res) => {
             });
         }
 
-        // Check if receivedRequests field exists
         const receivedRequests = company.receivedRequests || [];
-        
+
         res.status(200).json({
             meta: {
                 statusCode: 200,
@@ -567,153 +565,107 @@ exports.getVerificationRequestsForCompany = async (req, res) => {
 
 exports.updateVerificationStatus = async (req, res) => {
     try {
-      const { employeeId, requestId } = req.params;
-      const { status } = req.body;
-  
-      if (!["Approved", "Rejected"].includes(status)) {
-        return res.status(400).json({
-          meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
+        const { employeeId, requestId } = req.params;
+        const { status } = req.body;
+
+        if (!["Approved", "Rejected"].includes(status)) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
+            });
+        }
+
+        const employee = await Employee.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Employee not found." },
+            });
+        }
+
+        const employeeRequestIndex = employee.verificationRequests.findIndex(
+            req => req._id.toString() === requestId
+        );
+
+        if (employeeRequestIndex === -1) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Verification request not found in employee records." },
+            });
+        }
+
+        const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
+
+        const company = await Company.findById(companyId);
+        if (!company) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Company not found." },
+            });
+        }
+
+        const companyRequestIndex = company.receivedRequests.findIndex(
+            req => req._id.toString() === requestId
+        );
+
+        if (companyRequestIndex === -1) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Verification request not found in company records." },
+            });
+        }
+
+        employee.verificationRequests[employeeRequestIndex].status = status;
+        company.receivedRequests[companyRequestIndex].status = status;
+
+        await employee.save();
+        await company.save();
+
+        return res.status(200).json({
+            meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
         });
-      }
-  
-      // Find the employee
-      const employee = await Employee.findById(employeeId);
-      if (!employee) {
-        return res.status(404).json({
-          meta: { statusCode: 404, status: false, message: "Employee not found." },
-        });
-      }
-  
-      // Find the request in employee's verificationRequests
-      const employeeRequestIndex = employee.verificationRequests.findIndex(
-        req => req._id.toString() === requestId
-      );
-      
-      if (employeeRequestIndex === -1) {
-        return res.status(404).json({
-          meta: { statusCode: 404, status: false, message: "Verification request not found in employee records." },
-        });
-      }
-  
-      // Get the companyId from the request
-      const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
-      
-      // Find the company
-      const company = await Company.findById(companyId);
-      if (!company) {
-        return res.status(404).json({
-          meta: { statusCode: 404, status: false, message: "Company not found." },
-        });
-      }
-  
-      // Find the request in company's receivedRequests
-      const companyRequestIndex = company.receivedRequests.findIndex(
-        req => req._id.toString() === requestId
-      );
-      
-      if (companyRequestIndex === -1) {
-        return res.status(404).json({
-          meta: { statusCode: 404, status: false, message: "Verification request not found in company records." },
-        });
-      }
-  
-      // Update status in both employee and company records
-      employee.verificationRequests[employeeRequestIndex].status = status;
-      company.receivedRequests[companyRequestIndex].status = status;
-  
-      // Save both documents
-      await employee.save();
-      await company.save();
-  
-      return res.status(200).json({
-        meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
-      });
     } catch (error) {
-      console.error("Error updating verification status:", error);
-      return res.status(500).json({
-        meta: { statusCode: 500, status: false, message: "Server error. Could not update status." },
-      });
+        console.error("Error updating verification status:", error);
+        return res.status(500).json({
+            meta: { statusCode: 500, status: false, message: "Server error. Could not update status." },
+        });
     }
-  };
+};
 exports.getVerificationStats = async (req, res) => {
     try {
-      const { companyRefId } = req.params;
-      
-      if (!companyRefId) {
-        return res.status(400).json({
-          meta: { statusCode: 400, status: false, message: "Company reference ID is required" },
-        });
-      }
-  
-      const company = await Company.findOne({ companyRefId });
-      if (!company) {
-        return res.status(404).json({
-          meta: { statusCode: 404, status: false, message: "Company not found" },
-        });
-      }
-  
-      const requests = company.receivedRequests || [];
-      
-      // Count requests by status
-      const pending = requests.filter(req => req.status === "Pending").length;
-      const approved = requests.filter(req => req.status === "Approved").length;
-      const rejected = requests.filter(req => req.status === "Rejected").length;
-      
-      return res.status(200).json({
-        meta: {
-          statusCode: 200,
-          status: true,
-          message: "Verification statistics retrieved successfully",
-        },
-        data: {
-          total: requests.length,
-          pending,
-          approved,
-          rejected
+        const { companyRefId } = req.params;
+
+        if (!companyRefId) {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Company reference ID is required" },
+            });
         }
-      });
+
+        const company = await Company.findOne({ companyRefId });
+        if (!company) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Company not found" },
+            });
+        }
+
+        const requests = company.receivedRequests || [];
+
+        const pending = requests.filter(req => req.status === "Pending").length;
+        const approved = requests.filter(req => req.status === "Approved").length;
+        const rejected = requests.filter(req => req.status === "Rejected").length;
+
+        return res.status(200).json({
+            meta: {
+                statusCode: 200,
+                status: true,
+                message: "Verification statistics retrieved successfully",
+            },
+            data: {
+                total: requests.length,
+                pending,
+                approved,
+                rejected
+            }
+        });
     } catch (error) {
-      console.error("Error fetching verification stats:", error);
-      return res.status(500).json({
-        meta: { statusCode: 500, status: false, message: "Server error" },
-      });
+        console.error("Error fetching verification stats:", error);
+        return res.status(500).json({
+            meta: { statusCode: 500, status: false, message: "Server error" },
+        });
     }
-  };
-
-
-// //Public API
-// exports.getAllCompanies = async (req, res) => {
-//     try {
-//       const companies = await Company.find({});
-  
-//       if (!companies || companies.length === 0) {
-//         return res.status(404).json({
-//           meta: { 
-//             statusCode: 404, 
-//             status: false, 
-//             message: "No companies found." 
-//           },
-//           data: []
-//         });
-//       }
-  
-//       res.status(200).json({
-//         meta: { 
-//           statusCode: 200, 
-//           status: true, 
-//           message: "Companies retrieved successfully." 
-//         },
-//         data: companies
-//       });
-//     } catch (error) {
-//       console.error("Error retrieving companies:", error);
-//       res.status(500).json({
-//         meta: { 
-//           statusCode: 500, 
-//           status: false, 
-//           message: "Server error. Could not retrieve companies." 
-//         }
-//       });
-//     }
-//   };
-
+};

@@ -1,7 +1,6 @@
 const Activity = require('../models/activity.model');
 const Company = require('../models/company.model');
 
-// Create a new activity
 exports.createActivity = async (activityData) => {
   try {
     const activity = new Activity(activityData);
@@ -13,12 +12,10 @@ exports.createActivity = async (activityData) => {
   }
 };
 
-// Get recent activities for a company
 exports.getRecentActivities = async (req, res) => {
   try {
     const companyId = req.company.id;
-    
-    // Validate company ID
+
     const companyExists = await Company.findById(companyId);
     if (!companyExists) {
       return res.status(404).json({
@@ -30,26 +27,21 @@ exports.getRecentActivities = async (req, res) => {
       });
     }
 
-    // Get pagination parameters with defaults
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Count total documents for pagination
     const totalActivities = await Activity.countDocuments({ companyId });
     const totalPages = Math.ceil(totalActivities / limit);
-    
-    // Query activities with pagination
+
     const activities = await Activity.find({ companyId })
       .sort({ timestamp: -1 })
       .skip(skip)
       .limit(limit);
 
-    // Format activities for frontend display
     const formattedActivities = activities.map(activity => {
-      // Calculate relative time
       const relativeTime = getRelativeTime(activity.timestamp);
-      
+
       return {
         id: activity._id,
         description: activity.description,
@@ -89,13 +81,12 @@ exports.getRecentActivities = async (req, res) => {
   }
 };
 
-// Clear all activities for a company
 exports.clearActivities = async (req, res) => {
   try {
     const companyId = req.company.id;
-    
+
     const result = await Activity.deleteMany({ companyId });
-    
+
     return res.status(200).json({
       meta: {
         statusCode: 200,
@@ -115,12 +106,11 @@ exports.clearActivities = async (req, res) => {
   }
 };
 
-// Helper function to calculate relative time
 function getRelativeTime(timestamp) {
   const now = new Date();
   const activityTime = new Date(timestamp);
   const diffInSeconds = Math.floor((now - activityTime) / 1000);
-  
+
   if (diffInSeconds < 60) {
     return `${diffInSeconds} sec ago`;
   } else if (diffInSeconds < 3600) {

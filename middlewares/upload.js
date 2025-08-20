@@ -11,7 +11,7 @@ const experienceLetterDir = path.join(__dirname, "../uploads/experienceletter");
 const educationDir = path.join(__dirname, "../uploads/education");
 const certificateDir = path.join(__dirname, "../uploads/certificate");
 const profileImageDir = path.join(__dirname, "../uploads/profileimages");
-const companyProfileImageDir = path.join(__dirname, "../uploads/companyprofileimages");  // Changed directory for company profile images
+const companyProfileImageDir = path.join(__dirname, "../uploads/companyprofileimages");
 
 [uploadDir, pdfUploadDir, experienceLetterDir, educationDir, certificateDir, profileImageDir, companyProfileImageDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
@@ -73,16 +73,16 @@ const defaultStorage = useS3
         filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
-    const bannerStorage = useS3
-  ? multerS3({
-      s3: s3,
-      bucket: config.get("AWS_S3_BUCKET_NAME"),
-      contentType: multerS3.AUTO_CONTENT_TYPE,
-      key: s3KeyGen('banners')
+const bannerStorage = useS3
+    ? multerS3({
+        s3: s3,
+        bucket: config.get("AWS_S3_BUCKET_NAME"),
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: s3KeyGen('banners')
     })
-  : multer.diskStorage({
-      destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads/banners')),
-      filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
+    : multer.diskStorage({
+        destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads/banners')),
+        filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
 
@@ -146,15 +146,15 @@ const experienceLetterStorage = useS3
         filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
-    const companyProfileImageStorage = useS3
+const companyProfileImageStorage = useS3
     ? multerS3({
         s3,
         bucket: config.get("AWS_S3_BUCKET_NAME"),
         contentType: multerS3.AUTO_CONTENT_TYPE,
-        key: s3KeyGen('companyprofileimages') // Changed folder to 'companyprofileimages'
+        key: s3KeyGen('companyprofileimages')
     })
     : multer.diskStorage({
-        destination: (req, file, cb) => cb(null, companyProfileImageDir), // Corrected the directory path
+        destination: (req, file, cb) => cb(null, companyProfileImageDir),
         filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
     });
 
@@ -164,7 +164,7 @@ upload.banner = multer({
     storage: bannerStorage,
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: imageFileFilter
-  });
+});
 upload.profileImage = multer({
     storage: profileImageStorage,
     limits: { fileSize: 5 * 1024 * 1024 },

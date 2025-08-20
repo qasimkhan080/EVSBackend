@@ -10,7 +10,7 @@ const logActivity = async (companyId, action, description, entityType, entityId,
       entityId,
       performedBy
     };
-    
+
     await activityController.createActivity(activityData);
   } catch (error) {
     console.error('Error logging activity:', error);

@@ -19,10 +19,9 @@ exports.forgotPassword = async (req, res) => {
             });
         }
 
-        // Determine which model to use based on userType
         const Model = userType === 'company' ? Company : Employee;
         const user = await Model.findOne({ email });
-        
+
         if (!user) {
             return res.status(404).json({
                 meta: {
@@ -40,12 +39,12 @@ exports.forgotPassword = async (req, res) => {
         user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
         await user.save();
 
-        const resetPath = userType === 'company' 
-            ? '/company/reset-password' 
+        const resetPath = userType === 'company'
+            ? '/company/reset-password'
             : '/employee/reset-password';
-        
+
         const resetLink = `${config.get("frontendBaseUrl")}${resetPath}/${resetToken}`;
-        
+
         await sendOtpEmail(user.email, `Click here to reset your password: ${resetLink}`);
 
         return res.status(200).json({
@@ -73,12 +72,10 @@ exports.resetPassword = async (req, res) => {
     const { newPassword, userType } = req.body;
 
     try {
-        // Determine which model to use based on userType
         const Model = userType === 'company' ? Company : Employee;
-        
-        // Find user with valid token
-        const user = await Model.findOne({ 
-            resetPasswordExpires: { $gt: Date.now() } 
+
+        const user = await Model.findOne({
+            resetPasswordExpires: { $gt: Date.now() }
         });
 
         if (!user || !bcrypt.compareSync(token, user.resetPasswordToken)) {
@@ -90,14 +87,14 @@ exports.resetPassword = async (req, res) => {
                 },
             });
         }
-        
+
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         if (!passwordRegex.test(newPassword)) {
             return res.status(400).json({
-                meta: { 
-                    statusCode: 400, 
-                    status: false, 
-                    message: "Password must be at least 8 characters, including uppercase, lowercase, number, and special character." 
+                meta: {
+                    statusCode: 400,
+                    status: false,
+                    message: "Password must be at least 8 characters, including uppercase, lowercase, number, and special character."
                 },
             });
         }

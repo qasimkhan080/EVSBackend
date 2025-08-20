@@ -2,12 +2,9 @@ const express = require("express");
 const router = express.Router();
 const employeeController = require('../controllers/employeeController')
 const companyAuth = require("../middlewares/companyAuth");
-// const employeePasswordResetController = require('../controllers/employeePasswordReset.controller');
 
-// Public Routes
 router.get("/companies", employeeController.getCompanies);
 router.get("/all", employeeController.getAllEmployees);
-
 
 router.post("/add", companyAuth, employeeController.addEmployee);
 router.get("/com/:companyRefId", employeeController.getEmployeesByCompany);
@@ -25,8 +22,5 @@ router.post("/update-verification-status/:employeeId", employeeController.submit
 router.put("/block/:employeeId", employeeController.blockEmployee);
 router.post("/generate-link", companyAuth, employeeController.generateAndSendLink);
 router.get('/ratings/:employeeId', employeeController.getEmployeeRatings);
-
-// router.post("/forgot-password", employeePasswordResetController.forgotPassword);
-// router.post("/reset-password/:token", employeePasswordResetController.resetPassword);
 
 module.exports = router;

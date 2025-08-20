@@ -21,6 +21,4 @@ router.delete("/document/:userId/:documentId", uploadController.deleteDocument);
 
 router.post('/companyprofileimage', upload.companyProfileImage.single('file'), uploadController.uploadCompanyProfileImage);
 
-// router.delete("/document/:userId/experienceletter", uploadController.deleteExperienceLetter);
-
 module.exports = router;

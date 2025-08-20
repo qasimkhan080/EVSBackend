@@ -12,7 +12,6 @@ router.post("/send-otp", upload.single("companyLogo"), authController.sendOtp);
 router.post('/verify-signup-company-otp', otpStoreTimeVerify, authController.verifySignupOtp);
 router.put("/register-company", companyAuth, authController.registerCompany);
 router.post("/resend-otp", resendOtpController.resendOtp);
-// router.put("/signup-final-step", companyAuth, authController.signupFinalStep);
 router.post("/login", authController.login);
 router.get("/company-data/:companyRefId", authController.getCompanyByRefId);
 router.delete("/:companyId", authController.deleteCompany);
@@ -21,10 +20,6 @@ router.patch("/update-verification-status/:employeeId/:requestId", authControlle
 router.post("/forgot-password", passwordResetController.forgotPassword);
 router.post("/reset-password/:token", passwordResetController.resetPassword);
 router.get("/verification-stats/:companyRefId", authController.getVerificationStats);
-
-// Public Routes
-// router.get("/companies", authController.getAllCompanies);
-
 
 
 

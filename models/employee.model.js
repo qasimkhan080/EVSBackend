@@ -1,9 +1,9 @@
 const mongoose = require("mongoose");
 const documentSchema = new mongoose.Schema({
-    type: { 
-        type: String, 
-        enum: ['banner', 'profilepic', 'resume', 'education', 'experienceletter', 'certificate'], 
-        required: true 
+    type: {
+        type: String,
+        enum: ['banner', 'profilepic', 'resume', 'education', 'experienceletter', 'certificate'],
+        required: true
     },
     url: { type: String, required: true },
     name: { type: String, required: true },

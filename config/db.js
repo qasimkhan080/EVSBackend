@@ -4,9 +4,6 @@ const db = config.get('mongoURI');
 
 const connectDB = () => {
     mongoose.connect(db, {
-        useUnifiedTopology: true,
-        useNewUrlParser: true,
-
     })
         .then(() => {
             console.log(`MongoDB Connected... ${db}`);

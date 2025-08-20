@@ -70,7 +70,7 @@ const employeeSchema = Joi.object({
     'string.empty': 'Password is required',
     'string.pattern.base': 'Password must contain at least one uppercase letter, one digit, one special character, and be at least 8 characters long'
   }),
-  
+
 });
 
 
@@ -433,10 +433,8 @@ exports.sendVerificationRequest = async (req, res) => {
       });
     }
 
-    // Create a unique ID for this verification request
     const requestId = new mongoose.Types.ObjectId();
 
-    // Create the request object with consistent structure
     const verificationRequest = {
       _id: requestId,
       companyId,
@@ -449,23 +447,21 @@ exports.sendVerificationRequest = async (req, res) => {
       description,
       from,
       to,
-      status: "Pending", // Default status is Pending
+      status: "Pending",
       requestedAt: new Date(),
     };
 
-    // Add to employee's verification requests
     employee.verificationRequests.push(verificationRequest);
     await employee.save();
 
-    // Add to company's received requests
     company.receivedRequests.push(verificationRequest);
     await company.save();
 
     res.status(200).json({
-      meta: { 
-        statusCode: 200, 
-        status: true, 
-        message: "Verification request sent successfully." 
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Verification request sent successfully."
       },
       data: {
         requestId: requestId
@@ -512,39 +508,31 @@ exports.getEmployeeVerificationRequests = async (req, res) => {
 };
 
 
-// This is your controller function that gets called
 exports.updateVerificationStatus = async (req, res) => {
   try {
     const { employeeId, requestId } = req.params;
     const { status } = req.body;
-    
-    // Find employee and their verification request
+
     const employee = await Employee.findById(employeeId);
-    
-    // Find the request in employee's verificationRequests
+
     const employeeRequestIndex = employee.verificationRequests.findIndex(
       req => req._id.toString() === requestId
     );
-    
-    // Get companyId from the request
+
     const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
-    
-    // Find the company
+
     const company = await Company.findById(companyId);
-    
-    // Find the request in company's receivedRequests
+
     const companyRequestIndex = company.receivedRequests.findIndex(
       req => req._id.toString() === requestId
     );
-    
-    // Update status in both records
+
     employee.verificationRequests[employeeRequestIndex].status = status;
     company.receivedRequests[companyRequestIndex].status = status;
-    
-    // Save both documents
+
     await employee.save();
     await company.save();
-    
+
     return res.status(200).json({
       meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
     });
@@ -561,8 +549,6 @@ exports.submitRating = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const { status, rating, comment, selectedOptions } = req.body;
-
-    console.log("Employee ID in backend:", employeeId);
 
     const employee = await Employee.findById(employeeId);
     if (!employee) {
@@ -681,14 +667,11 @@ exports.getEmployeesByCompany = async (req, res) => {
     });
 
 
-    // Filter employees based on company-specific blocks
     const blockedEmployees = [];
     const unblockedEmployees = [];
 
     processedEmployees.forEach(employee => {
-      console.log(`Employee ${employee._id} profile image:`, employee.profileImage); // Log individual images
 
-      // Check if employee has a companyBlock for this specific company
       const companyBlock = employee.companyBlocks?.find(block => block.companyRefId === companyRefId);
 
       if (companyBlock && companyBlock.isBlocked) {
@@ -707,7 +690,7 @@ exports.getEmployeesByCompany = async (req, res) => {
       data: {
         blocked: blockedEmployees,
         unblocked: unblockedEmployees,
-        
+
       },
     });
 
@@ -728,31 +711,41 @@ exports.getCompanies = async (req, res) => {
   const { companyRefId } = req.query;
 
   try {
-    console.log("Fetching companies...");
-
     const query = companyRefId ? { companyRefId: companyRefId } : {};
 
-    const companies = await Company.find(query);
-    console.log("Companies retrieved from database:", companies);
+    const companies = await Company.find(query)
+      .select('-password -otp -resetPasswordToken -resetPasswordExpires -__v')
+      .lean();
 
     if (!companies || companies.length === 0) {
       return res.status(404).json({
         meta: {
           statusCode: 404,
           status: false,
-          message: "No companies found with the given companyRefId."
+          message: "No companies found"
         },
         data: []
       });
     }
 
+    const companiesWithImages = companies.map(company => {
+      return {
+        ...company,
+        companyProfileImage: company.companyProfileImage
+          ? company.companyProfileImage.startsWith('http')
+            ? company.companyProfileImage
+            : `${process.env.S3_BASE_URL}/${company.companyProfileImage}`
+          : null
+      };
+    });
+
     res.status(200).json({
       meta: {
         statusCode: 200,
         status: true,
-        message: "Companies retrieved successfully."
+        message: "Companies retrieved successfully"
       },
-      data: companies
+      data: companiesWithImages
     });
 
   } catch (error) {
@@ -761,7 +754,7 @@ exports.getCompanies = async (req, res) => {
       meta: {
         statusCode: 500,
         status: false,
-        message: "Server error. Could not retrieve companies."
+        message: "Server error"
       }
     });
   }
@@ -771,8 +764,6 @@ exports.getCompanies = async (req, res) => {
 exports.blockEmployee = async (req, res) => {
   const { employeeId } = req.params;
   const { isBlocked, comment, companyRefId } = req.body;
-
-  console.log("companyRefId in back-end:", companyRefId);
 
   try {
     if (!companyRefId) {
@@ -1055,7 +1046,6 @@ exports.loginEmployee = async (req, res) => {
       });
     }
 
-    // Generate a token
     const payload = {
       employee: {
         id: employee.id,
@@ -1150,7 +1140,6 @@ exports.generateAndSendLink = async (req, res) => {
   }
 };
 
-// Add this function to your employee controller file
 
 exports.getEmployeeRatings = async (req, res) => {
   const { employeeId } = req.params;
@@ -1206,15 +1195,12 @@ exports.getEmployeeRatings = async (req, res) => {
 };
 
 
-// Public API
 exports.getAllEmployees = async (req, res) => {
   try {
-    // Find all employees
     const employees = await Employee.find({})
-      // Remove sensitive information
-      .select('-password -otp -isEmailVerified -__v');
+      .select('-password -otp -isEmailVerified -__v')
+      .lean();
 
-    // Check if employees exist
     if (!employees || employees.length === 0) {
       return res.status(404).json({
         meta: {
@@ -1226,7 +1212,14 @@ exports.getAllEmployees = async (req, res) => {
       });
     }
 
-    // Return success response
+    const employeesWithImages = employees.map(employee => {
+      const profilePic = employee.documents?.find(d => d.type === 'profilepic');
+      return {
+        ...employee,
+        profileImageURL: profilePic?.url || null
+      };
+    });
+
     res.status(200).json({
       meta: {
         statusCode: 200,
@@ -1234,7 +1227,7 @@ exports.getAllEmployees = async (req, res) => {
         message: "Employees retrieved successfully.",
         count: employees.length
       },
-      data: employees
+      data: employeesWithImages
     });
   } catch (error) {
     console.error("Error retrieving employees:", error);

@@ -93,7 +93,7 @@ const companySchema = mongoose.Schema({
                 type: String,
                 enum: ['Approved', 'Pending', 'Rejected'],
                 default: 'Pending'
-            },            requestedAt: { type: Date, default: Date.now },
+            }, requestedAt: { type: Date, default: Date.now },
         },
     ],
 
