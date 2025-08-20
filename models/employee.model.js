@@ -1,12 +1,26 @@
 const mongoose = require("mongoose");
-
+const documentSchema = new mongoose.Schema({
+    type: {
+        type: String,
+        enum: ['banner', 'profilepic', 'resume', 'education', 'experienceletter', 'certificate'],
+        required: true
+    },
+    url: { type: String, required: true },
+    name: { type: String, required: true },
+    size: { type: Number, required: true },
+    uploadedAt: { type: Date, default: Date.now },
+    s3Key: { type: String, required: true },
+    uniqueId: { type: String }
+});
 const employeeSchema = mongoose.Schema({
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: false, minlength: 6 },
     about: { type: String, default: "" },
-
+    companyLogo: { type: String, required: false },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
     country: { type: String, required: false },
     city: { type: String, required: false },
     phoneNumber: { type: String, required: false },
@@ -75,23 +89,37 @@ const employeeSchema = mongoose.Schema({
             description: String,
             from: String,
             to: String,
-            status: { type: String, default: "Pending" },
+            status: {
+                type: String,
+                enum: ['Approved', 'Pending', 'Rejected'],
+                default: 'Pending'
+            },
             requestedAt: { type: Date, default: Date.now },
         },
     ],
-    
+
     ratings: [
         {
-          rating: Number,
-          comment: String,
-          selectedOptions: [String],
-          date: { type: Date, default: Date.now },
-          status: {
-            type: String,
-            enum: ['Approved', 'Rejected', 'pending'],
-          }
+            rating: Number,
+            comment: String,
+            selectedOptions: [String],
+            date: { type: Date, default: Date.now },
+            status: {
+                type: String,
+                enum: ['Approved', 'Rejected', 'pending'],
+            }
         },
-      ],
+    ],
+    companyBlocks: [
+        {
+            companyRefId: { type: String },
+            isBlocked: { type: Boolean, default: false },
+            comment: { type: String, default: "" },
+        },
+    ],
+
+    documents: [documentSchema]
+
 });
 
 module.exports = mongoose.model("Employee", employeeSchema);
