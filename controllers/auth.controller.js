@@ -223,6 +223,7 @@ exports.registerCompany = async (req, res) => {
         companySize,
         industry,
         companyWebsite,
+        countryCode,
         phoneNumber,
         foundingYear,
         heardAboutUs
@@ -286,6 +287,12 @@ exports.registerCompany = async (req, res) => {
                 "string.empty": "Company Website is required",
                 "string.uri": "Invalid website URL format"
             }),
+
+            countryCode: Joi.string().pattern(/^\+\d{1,4}$/).required().messages({
+        "string.empty": "Country Code is required",
+        "string.pattern.base": "Country Code must start with '+' followed by 1-4 digits"
+    }),
+
             phoneNumber: Joi.string()
                 .pattern(/^\+?\d{09,15}$/)
                 .required()
@@ -626,6 +633,8 @@ exports.updateVerificationStatus = async (req, res) => {
         });
     }
 };
+
+
 exports.getVerificationStats = async (req, res) => {
     try {
         const { companyRefId } = req.params;
