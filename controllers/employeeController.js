@@ -457,6 +457,19 @@ exports.sendVerificationRequest = async (req, res) => {
     company.receivedRequests.push(verificationRequest);
     await company.save();
 
+    // Create notification for company
+    const Notification = require('../models/notification.model');
+    
+    const companyNotification = new Notification({
+      type: 'company',
+      title: 'New Verification Request',
+      message: `${verificationRequest.employeeName} has requested verification for ${designation} position.`,
+      companyId: companyId,
+      relatedEmployeeId: employeeId,
+      requestId: requestId,
+    });
+    await companyNotification.save();
+
     res.status(200).json({
       meta: {
         statusCode: 200,
@@ -474,7 +487,6 @@ exports.sendVerificationRequest = async (req, res) => {
     });
   }
 };
-
 
 exports.getEmployeeVerificationRequests = async (req, res) => {
   try {
@@ -513,28 +525,67 @@ exports.updateVerificationStatus = async (req, res) => {
     const { employeeId, requestId } = req.params;
     const { status } = req.body;
 
+    if (!status) {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: "Status is required." },
+      });
+    }
+
     const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Employee not found." },
+      });
+    }
 
-    const employeeRequestIndex = employee.verificationRequests.findIndex(
+    const employeeRequest = employee.verificationRequests.find(
       req => req._id.toString() === requestId
     );
 
-    const companyId = employee.verificationRequests[employeeRequestIndex].companyId;
+    if (!employeeRequest) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Verification request not found for this employee." },
+      });
+    }
 
-    const company = await Company.findById(companyId);
+    const company = await Company.findById(employeeRequest.companyId);
+    if (!company) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Associated company not found." },
+      });
+    }
 
-    const companyRequestIndex = company.receivedRequests.findIndex(
+    const companyRequest = company.receivedRequests.find(
       req => req._id.toString() === requestId
     );
 
-    employee.verificationRequests[employeeRequestIndex].status = status;
-    company.receivedRequests[companyRequestIndex].status = status;
+    if (!companyRequest) {
+       return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Verification request not found for this company." },
+      });
+    }
+
+    employeeRequest.status = status;
+    companyRequest.status = status;
+
+    if (status === 'Approved') {
+      const Notification = require('../models/notification.model');
+      const notification = new Notification({
+        type: 'employee',
+        title: 'Verification Request Approved',
+        message: `Your verification request to ${company.companyName} for the ${employeeRequest.designation} position has been approved.`,
+        employeeId: employeeId,
+        relatedCompanyId: company._id,
+        requestId: requestId,
+      });
+      await notification.save();
+    }
 
     await employee.save();
     await company.save();
 
     return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Request ${status.toLowerCase()} successfully.` },
+      meta: { statusCode: 200, status: true, message: `Request status updated to ${status.toLowerCase()} successfully.` },
     });
   } catch (error) {
     console.error("Error updating verification status:", error);
