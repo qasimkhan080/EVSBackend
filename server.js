@@ -21,10 +21,11 @@ app.use('/api/employee', employeeRoutes)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use('/api/upload', uploadRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.get("/", (req, res) => {
+  res.send("Server is running....");
+});
 
-
-
-const PORT = 5000;
+const PORT = 3001;
 server.listen(PORT, () => {
   console.log('server started on port' + PORT)
 });
