@@ -9,6 +9,7 @@ const server = http.createServer(app);
 var cors = require('cors');
 const connectDB = require("./config/db")
 const uploadRoutes = require("./routes/uplaod.routes")
+const notificationRoutes = require("./routes/notification.routes")
 
 
 connectDB();
@@ -19,11 +20,10 @@ app.use('/api/auth', authRoutes)
 app.use('/api/employee', employeeRoutes)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use('/api/upload', uploadRoutes)
+app.use('/api/notifications', notificationRoutes)
 app.get("/", (req, res) => {
   res.send("Server is running....");
 });
-
-
 
 const PORT = 3001;
 server.listen(PORT, () => {
