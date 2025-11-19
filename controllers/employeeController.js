@@ -1319,7 +1319,7 @@ exports.generateAndSendLink = async (req, res) => {
 
     res.setHeader('Authorization', `Bearer ${token}`);
 
-    const link = `${config.get("frontendBaseUrl")}/add-employee?token=${token}`;
+    const link = `${config.get("serverBaseUrl")}/add-employee?token=${token}`;
     const emailBody = `Click the following link to register: ${link}`;
 
     await sendOtpEmail(email, emailBody);
