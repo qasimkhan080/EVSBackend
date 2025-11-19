@@ -9,7 +9,7 @@ const server = http.createServer(app);
 var cors = require('cors');
 const connectDB = require("./config/db")
 const uploadRoutes = require("./routes/uplaod.routes")
-const notificationRoutes = require("./routes/notification.routes")
+const notificationRoutes = require("./routes/notification.routes")  
 
 
 connectDB();
@@ -25,7 +25,7 @@ app.get("/", (req, res) => {
   res.send("Server is running....");
 });
 
-const PORT = 3001;
+const PORT = 5000;
 server.listen(PORT, () => {
   console.log('server started on port' + PORT)
 });

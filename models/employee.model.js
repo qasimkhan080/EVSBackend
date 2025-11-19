@@ -15,6 +15,8 @@ const documentSchema = new mongoose.Schema({
 const employeeSchema = mongoose.Schema({
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
+    username: { type: String, required: false },
+    designation: { type: String, required: false },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: false, minlength: 6 },
     about: { type: String, default: "" },

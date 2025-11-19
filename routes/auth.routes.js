@@ -20,7 +20,7 @@ router.patch("/update-verification-status/:employeeId/:requestId", authControlle
 router.post("/forgot-password", passwordResetController.forgotPassword);
 router.post("/reset-password/:token", passwordResetController.resetPassword);
 router.get("/verification-stats/:companyRefId", authController.getVerificationStats);
-
+router.put("/update-profile", companyAuth, authController.updateCompanyProfile);
 
 
 

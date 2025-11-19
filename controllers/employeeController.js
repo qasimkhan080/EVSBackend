@@ -459,7 +459,7 @@ exports.sendVerificationRequest = async (req, res) => {
 
     // Create notification for company
     const Notification = require('../models/notification.model');
-    
+
     const companyNotification = new Notification({
       type: 'company',
       title: 'New Verification Request',
@@ -560,7 +560,7 @@ exports.updateVerificationStatus = async (req, res) => {
     );
 
     if (!companyRequest) {
-       return res.status(404).json({
+      return res.status(404).json({
         meta: { statusCode: 404, status: false, message: "Verification request not found for this company." },
       });
     }
@@ -1040,32 +1040,185 @@ exports.verifyEmployment = async (req, res) => {
   }
 };
 
-
 exports.updateEmployee = async (req, res) => {
-  const { employeeId } = req.params;
-  const updatedData = req.body;
-
   try {
-    const updatedEmployee = await Employee.findByIdAndUpdate(
-      employeeId,
-      { ...updatedData },
-      { new: true, runValidators: true }
-    );
+    const { employeeId } = req.params;
+    const token = req.header("x-auth-token");
 
-    if (!updatedEmployee) {
-      return res.status(404).json({
-        meta: { status: false, message: "Employee not found." },
+    // Check if token is provided
+    if (!token) {
+      return res.status(401).json({
+        meta: { statusCode: 401, status: false, message: "No token provided." }
       });
     }
 
-    res.status(200).json({
-      meta: { status: true, message: "Employee updated successfully." },
-      data: updatedEmployee,
+    // Verify token and get employee ID
+    let actualEmployeeId = employeeId;
+
+    try {
+      const decoded = jwt.verify(token, config.get("jwtSecret"));
+      if (decoded && decoded.employee?.id) {
+        actualEmployeeId = decoded.employee.id;
+      }
+    } catch (tokenError) {
+      // If token verification fails, use the provided employeeId (for company updates)
+      console.log("Token verification failed, using provided employeeId");
+    }
+
+    const employee = await Employee.findById(actualEmployeeId);
+
+    if (!employee) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Employee not found." }
+      });
+    }
+
+    const {
+      firstName, lastName, about, country, city, phoneNumber, email,
+      username, designation,
+      education, languages, employmentHistory, skills,
+      oldPassword, newPassword
+    } = req.body;
+
+    // Password update logic (only if both oldPassword and newPassword are provided)
+    if (oldPassword && newPassword) {
+      if (!employee.password) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "No password set for this account" }
+        });
+      }
+
+      const isMatch = await bcrypt.compare(oldPassword, employee.password);
+      if (!isMatch) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Old password is incorrect" }
+        });
+      }
+
+      // Password validation using existing schema pattern
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}:;"'<>,.?/|\\~`]).{8,}$/;
+      if (!passwordRegex.test(newPassword)) {
+        return res.status(400).json({
+          meta: {
+            statusCode: 400,
+            status: false,
+            message: "Password must contain at least one uppercase letter, one digit, one special character, and be at least 8 characters long"
+          }
+        });
+      }
+
+      // Check if new password is same as old password
+      if (oldPassword === newPassword) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "New password must be different from current password" }
+        });
+      }
+
+      employee.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    // Update basic info
+    if (firstName !== undefined) employee.firstName = firstName;
+    if (lastName !== undefined) employee.lastName = lastName;
+    if (username !== undefined) employee.username = username;
+    if (designation !== undefined) employee.designation = designation;
+    if (about !== undefined) employee.about = about;
+    if (country !== undefined) employee.country = country;
+    if (city !== undefined) employee.city = city;
+    if (phoneNumber !== undefined) employee.phoneNumber = phoneNumber;
+    // Note: Email is typically not updated for security reasons
+
+    // Update education with validation
+    if (education && Array.isArray(education)) {
+      const validEducation = education.map((edu) => ({
+        levelOfEducation: edu.levelOfEducation || "",
+        fieldOfStudy: edu.fieldOfStudy || "",
+        fromYear: edu.fromYear ? String(edu.fromYear) : "",
+        toYear: edu.toYear ? String(edu.toYear) : "",
+      }));
+      employee.education = validEducation;
+    }
+
+    // Update languages
+    if (languages && Array.isArray(languages)) {
+      const validLanguages = languages.map((lang) => ({
+        language: lang.language || "",
+        conversation: lang.conversation || lang.proficiency || ""
+      }));
+      employee.languages = validLanguages;
+    }
+
+    // Update employment history
+    if (employmentHistory && Array.isArray(employmentHistory)) {
+      const validEmployment = employmentHistory.map((emp) => ({
+        jobTitle: emp.jobTitle || "",
+        company: emp.company || "",
+        location: emp.location || "",
+        currentlyWorking: Boolean(emp.currentlyWorking),
+        fromMonth: emp.fromMonth || "",
+        fromYear: emp.fromYear || "",
+        toMonth: emp.currentlyWorking ? "" : (emp.toMonth || ""),
+        toYear: emp.currentlyWorking ? "" : (emp.toYear || ""),
+        type: emp.type || "",
+        description: emp.description || "",
+        verified: Boolean(emp.verified)
+      }));
+      employee.employmentHistory = validEmployment;
+    }
+
+    // Update skills
+    if (skills && Array.isArray(skills)) {
+      const validSkills = skills.map((skill) => {
+        if (typeof skill === 'string') {
+          return { skillName: skill };
+        }
+        return { skillName: skill.skillName || skill.name || skill };
+      }).filter(skill => skill.skillName); // Remove empty skills
+
+      employee.skills = validSkills;
+    }
+
+    employee.updatedAt = new Date();
+    await employee.save();
+
+    // Return success response
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "Employee profile updated successfully!" },
+      data: {
+        id: employee._id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        username: employee.username,
+        designation: employee.designation,
+        email: employee.email,
+        about: employee.about,
+        country: employee.country,
+        city: employee.city,
+        phoneNumber: employee.phoneNumber,
+        education: employee.education,
+        languages: employee.languages,
+        employmentHistory: employee.employmentHistory,
+        skills: employee.skills
+      }
     });
+
   } catch (error) {
     console.error("Error updating employee:", error);
-    res.status(500).json({
-      meta: { status: false, message: "Failed to update employee." },
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: "Invalid token provided!" }
+      });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        meta: { statusCode: 401, status: false, message: "Token expired. Please log in again." }
+      });
+    }
+
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Internal Server Error" }
     });
   }
 };
