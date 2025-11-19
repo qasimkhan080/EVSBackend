@@ -215,6 +215,121 @@ exports.verifySignupOtp = async (req, res) => {
     }
 };
 
+exports.updateCompanyProfile = async (req, res) => {
+    const authToken = req.header("x-auth-token");
+    
+    if (!authToken) {
+        return res.status(401).json({
+            meta: { statusCode: 401, status: false, message: "No token provided." }
+        });
+    }
+
+    try {
+        // Login ke time jo token banaya tha, wahi format use karein
+        const decoded = jwt.verify(authToken, config.get("jwtSecret"));
+        
+        // console.log("Decoded token:", decoded);
+        
+        // Login response ke format ke according
+        if (!decoded || !decoded.store?.id) {
+            return res.status(401).json({
+                meta: { statusCode: 401, status: false, message: "Invalid token format." }
+            });
+        }
+
+        // Company find karein using store.id
+        let company = await Company.findById(decoded.store.id);
+        
+        if (!company) {
+            return res.status(404).json({
+                meta: { statusCode: 404, status: false, message: "Company not found!" }
+            });
+        }
+
+        const {
+            companyName, industry, companySize, phoneNumber, companyWebsite,
+            heardAboutUs, firstName, secondName, foundingYear, socialLinks,
+            oldPassword, newPassword
+        } = req.body;
+
+        // Password update logic
+        if (oldPassword && newPassword) {
+            const isMatch = await bcrypt.compare(oldPassword, company.password);
+            if (!isMatch) {
+                return res.status(400).json({
+                    meta: { statusCode: 400, status: false, message: "Old password is incorrect" }
+                });
+            }
+
+            // Password validation
+            const passwordSchema = Joi.string()
+                .min(8)
+                .pattern(new RegExp("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$"));
+
+            const { error } = passwordSchema.validate(newPassword);
+            if (error) {
+                return res.status(400).json({
+                    meta: { statusCode: 400, status: false, message: "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character." }
+                });
+            }
+
+            company.password = await bcrypt.hash(newPassword, 10);
+        }
+
+        // Update other fields
+        if (companyName !== undefined) company.companyName = companyName;
+        if (industry !== undefined) company.industry = industry;
+        if (companySize !== undefined) company.companySize = companySize;
+        if (phoneNumber !== undefined) company.phoneNumber = phoneNumber;
+        if (companyWebsite !== undefined) company.companyWebsite = companyWebsite;
+        if (heardAboutUs !== undefined) company.heardAboutUs = heardAboutUs;
+        if (firstName !== undefined) company.firstName = firstName;
+        if (secondName !== undefined) company.secondName = secondName;
+        if (foundingYear !== undefined) company.foundingYear = foundingYear;
+        
+        // Update social links
+        if (socialLinks) {
+            if (!company.socialLinks) {
+                company.socialLinks = {};
+            }
+            Object.assign(company.socialLinks, socialLinks);
+        }
+
+        company.updatedAt = new Date();
+        await company.save();
+
+        return res.status(200).json({
+            meta: { statusCode: 200, status: true, message: "Profile updated successfully!" },
+            data: {
+                companyName: company.companyName,
+                industry: company.industry,
+                companySize: company.companySize,
+                phoneNumber: company.phoneNumber,
+                companyWebsite: company.companyWebsite,
+                socialLinks: company.socialLinks
+            }
+        });
+
+    } catch (error) {
+        console.error("Error updating profile:", error);
+        
+        if (error.name === "JsonWebTokenError") {
+            return res.status(400).json({
+                meta: { statusCode: 400, status: false, message: "Invalid token provided!" }
+            });
+        }
+        
+        if (error.name === "TokenExpiredError") {
+            return res.status(401).json({
+                meta: { statusCode: 401, status: false, message: "Token expired. Please log in again." }
+            });
+        }
+        
+        return res.status(500).json({
+            meta: { statusCode: 500, status: false, message: "Internal Server Error" }
+        });
+    }
+};
 
 exports.registerCompany = async (req, res) => {
     const {
