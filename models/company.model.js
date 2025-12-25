@@ -96,6 +96,13 @@ const companySchema = mongoose.Schema({
             }, requestedAt: { type: Date, default: Date.now },
         },
     ],
+    
+    socialLinks: {
+    linkedin: { type: String, default: "" },
+    instagram: { type: String, default: "" },
+    facebook: { type: String, default: "" },
+    website: { type: String, default: "" }
+},
 
 })
 module.exports = mongoose.model('Company', companySchema);
