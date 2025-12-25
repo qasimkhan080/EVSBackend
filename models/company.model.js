@@ -31,18 +31,15 @@ const companySchema = mongoose.Schema({
         type: Date,
         default: Date.now
     },
-    firstName: {
-        type: String,
-    },
-    secondName: {
-        type: String,
+    foundingYear: {
+        type: Number,
     },
     companyName: {
         type: String,
     },
-    companyLogo: {
+    companyLogo: { type: String, required: false },
+    location: {
         type: String,
-        required: true
     },
     companySize: {
         type: String
@@ -76,6 +73,10 @@ const companySchema = mongoose.Schema({
         type: Date,
         default: null
     },
+    companyProfileImage: {
+        type: String,
+        required: false
+    },
     receivedRequests: [
         {
 
@@ -88,10 +89,20 @@ const companySchema = mongoose.Schema({
             description: String,
             from: Date,
             to: Date,
-            status: { type: String, default: "Pending" },
-            requestedAt: { type: Date, default: Date.now },
+            status: {
+                type: String,
+                enum: ['Approved', 'Pending', 'Rejected'],
+                default: 'Pending'
+            }, requestedAt: { type: Date, default: Date.now },
         },
     ],
+    
+    socialLinks: {
+    linkedin: { type: String, default: "" },
+    instagram: { type: String, default: "" },
+    facebook: { type: String, default: "" },
+    website: { type: String, default: "" }
+},
 
 })
 module.exports = mongoose.model('Company', companySchema);

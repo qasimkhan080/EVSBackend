@@ -10,8 +10,8 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 const Token = require('../models/TokenSchema');
 const nodemailer = require("nodemailer");
-
-
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const employeeSchema = Joi.object({
   firstName: Joi.string().min(1).required().messages({
@@ -30,7 +30,7 @@ const employeeSchema = Joi.object({
   phoneNumber: Joi.string().optional(),
   country: Joi.string().optional(),
   city: Joi.string().optional(),
-  about: Joi.string().optional(),
+  about: Joi.string().allow('').optional(),
   education: Joi.array().items(
     Joi.object({
       levelOfEducation: Joi.string().required(),
@@ -65,254 +65,90 @@ const employeeSchema = Joi.object({
   })).optional(),
   companyRefId: Joi.string().optional(),
   selfEnrolled: Joi.boolean().required(),
-  password: Joi.string().min(6).optional().messages({
-    'string.min': 'Password should be at least 6 characters long',
+  password: Joi.string().regex(/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}:;"'<>,.?/|\\~`]).{8,}$/).required().messages({
+    'string.base': 'Password should be a string',
+    'string.empty': 'Password is required',
+    'string.pattern.base': 'Password must contain at least one uppercase letter, one digit, one special character, and be at least 8 characters long'
   }),
+
 });
 
-
 exports.addEmployee = async (req, res) => {
-
-
-  const { error } = employeeSchema.validate(req.body, { abortEarly: false });
-
-  if (error) {
-    return res.status(400).json({
-      meta: {
-        statusCode: 400,
-        status: false,
-        message: 'Validation failed.',
-        errors: error.details.map((err) => err.message),
-      },
-    });
-  }
-
-
-  const {
-    firstName,
-    lastName,
-    country,
-    city,
-    phoneNumber,
-    email,
-    password,
-    about,
-    education,
-    languages,
-    employmentHistory,
-    skills,
-    companyRefId,
-    selfEnrolled,
-  } = req.body;
-
   try {
-    if (!firstName || !lastName || !email || typeof selfEnrolled !== "boolean") {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: "Missing required fields: firstName, lastName, email, or selfEnrolled.",
-        },
-      });
-    }
-
-    // Check if employee already exists
+    const { firstName, lastName, email, password, sso, selfEnrolled } = req.body;
+    if (!email)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is required" } });
     const existingEmployee = await Employee.findOne({ email });
-    if (existingEmployee) {
-      return res.status(409).json({
-        meta: {
-          statusCode: 409,
-          status: false,
-          message: `An account with email ${email} already exists.`,
-        },
-      });
-    }
-
-    // Self-enrolled employee logic
-    if (selfEnrolled) {
-      if (!password) {
-        return res.status(400).json({
-          meta: {
-            statusCode: 400,
-            status: false,
-            message: "Password is required for self-registration.",
-          },
-        });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      const otp = generateOtp();
-
-      // Create employee with OTP and hashed password
-      const newEmployee = new Employee({
+    if (existingEmployee)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: `Already have an account on ${email}` } });
+    if (sso === true) {
+      if (!firstName || !lastName)
+        return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Name is required" } });
+      const employee = await Employee.create({
         firstName,
         lastName,
-        country,
-        city,
-        phoneNumber,
         email,
-        password: hashedPassword,
-        about,
-        otp,
-        isEmailVerified: false,
-        education: education?.map((edu) => ({
-          levelOfEducation: edu.levelOfEducation,
-          fieldOfStudy: edu.fieldOfStudy,
-          fromYear: edu.fromYear,
-          toYear: edu.toYear,
-        })),
-        languages,
-        employmentHistory,
-        skills: skills?.map((skill) => ({ skillName: skill.skillName })),
-        selfEnrolled: true,
+        sso: true,
+        isEmailVerified: true,
+        selfEnrolled: true
       });
-
-      await newEmployee.save();
-      await sendOtpEmail(email, otp);
-
-      return res.status(201).json({
-        meta: {
-          statusCode: 201,
-          status: true,
-          message: "Employee registered successfully. OTP sent to the email.",
-        },
-        data: { id: newEmployee._id, email: newEmployee.email },
+      const token = jwt.sign({ id: employee.id, sso: true }, config.get("jwtSecret"), { expiresIn: config.get("TokenExpire") });
+      return res.status(200).json({
+        data: { token },
+        meta: { statusCode: 200, status: true, message: "SSO signup successful" }
       });
     }
-
-    // Company-added employee logic
-    if (!selfEnrolled) {
-      if (!companyRefId) {
-        return res.status(400).json({
-          meta: {
-            statusCode: 400,
-            status: false,
-            message: "Company reference ID is required for company-added employees.",
-          },
-        });
-      }
-
-      const company = await Company.findOne({ companyRefId });
-      if (!company) {
-        return res.status(404).json({
-          meta: {
-            statusCode: 404,
-            status: false,
-            message: "Company not found.",
-          },
-        });
-      }
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      // Create employee without OTP    
-      const newEmployee = new Employee({
-        firstName,
-        lastName,
-        country,
-        city,
-        phoneNumber,
-        email,
-        password: hashedPassword,
-        education: education?.map((edu) => ({
-          levelOfEducation: edu.levelOfEducation,
-          fieldOfStudy: edu.fieldOfStudy,
-          fromYear: edu.fromYear,
-          toYear: edu.toYear,
-        })),
-        languages,
-        employmentHistory,
-        skills: skills?.map((skill) => ({ skillName: skill.skillName })),
-        companyRefId,
-        selfEnrolled: false,
-      });
-
-      await newEmployee.save();
-
-      const emailBody = `
-      Hello ${firstName},
-      Your account has been created by your company.
-      Email: ${email}
-      Password: ${password}
-      Please change your password after logging in.
-    `;
-      await sendOtpEmail(email, emailBody);
-
-      return res.status(201).json({
-        meta: {
-          statusCode: 201,
-          status: true,
-          message: "Employee added successfully by the company.",
-        },
-        data: newEmployee,
-      });
-    }
-
-    res.status(400).json({
-      meta: {
-        statusCode: 400,
-        status: false,
-        message: "Invalid request. Please specify selfEnrolled as true or false.",
-      },
+    if (!password)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Password is required" } });
+    const otp = generateOtp();
+    const otpHash = await bcrypt.hash(otp, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await Employee.create({
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+      otp: otpHash,
+      otpExpiresAt: Date.now() + 5 * 60 * 1000,
+      isEmailVerified: false,
+      selfEnrolled: selfEnrolled ?? true
     });
+    await sendOtpEmail(email, otp);
+    return res.status(200).json({ meta: { statusCode: 200, status: true, message: `OTP sent to ${email}` } });
   } catch (error) {
-    console.error("Error adding employee:", error.message);
-    res.status(500).json({
-      meta: {
-        statusCode: 500,
-        status: false,
-        message: "Server error. Could not add employee.",
-      },
+    console.error("Add Employee Error:", error);
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Internal Server Error!" }
     });
   }
 };
 
-
 exports.verifyEmployeeOtp = async (req, res) => {
-  const { email, otp } = req.body;
-
   try {
+    const { email, otp } = req.body;
+    if (!email || !otp)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email and OTP are required" } });
     const employee = await Employee.findOne({ email });
-
-    if (!employee) {
-      return res.status(404).json({
-        meta: {
-          statusCode: 404,
-          status: false,
-          message: "Employee not found.",
-        },
-      });
-    }
-
-    if (employee.otp !== otp) {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: "Invalid OTP. Please try again.",
-        },
-      });
-    }
-
+    if (!employee)
+      return res.status(404).json({ meta: { statusCode: 404, status: false, message: "Employee not found" } });
+    if (employee.isEmailVerified)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is already verified" } });
+    if (!employee.otp || Date.now() > employee.otpExpiresAt)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "OTP expired" } });
+    const isMatch = await bcrypt.compare(otp.toString(), employee.otp);
+    if (!isMatch)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Invalid OTP" } });
     employee.isEmailVerified = true;
     employee.otp = null;
+    employee.otpExpiresAt = null;
     await employee.save();
-
-    res.status(200).json({
-      meta: {
-        statusCode: 200,
-        status: true,
-        message: "OTP verified successfully. Your email is now verified.",
-      },
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "Email verified successfully" }
     });
   } catch (error) {
-    console.error("Error verifying OTP:", error);
-    res.status(500).json({
-      meta: {
-        statusCode: 500,
-        status: false,
-        message: "Internal server error.",
-      },
+    console.error("Verify OTP Error:", error);
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Internal server error" }
     });
   }
 };
@@ -320,7 +156,7 @@ exports.verifyEmployeeOtp = async (req, res) => {
 
 exports.sendVerificationRequest = async (req, res) => {
   const { employeeId, companyId } = req.params;
-  const { designation, skills, description, from, to } = req.body;
+  const { designation, skills, description, from, to, userName, userEmail } = req.body;
 
   try {
     if (!designation || !skills || !description || !from) {
@@ -347,16 +183,15 @@ exports.sendVerificationRequest = async (req, res) => {
       });
     }
 
-    const userName = `${employee.firstName} ${employee.lastName}`;
-    const userEmail = employee.email;
+    const requestId = new mongoose.Types.ObjectId();
 
     const verificationRequest = {
-      _id: new mongoose.Types.ObjectId(),
+      _id: requestId,
       companyId,
       companyName: company.companyName,
       employeeId,
-      employeeName: userName,
-      employeeEmail: userEmail,
+      employeeName: userName || `${employee.firstName} ${employee.lastName}`,
+      employeeEmail: userEmail || employee.email,
       designation,
       skills,
       description,
@@ -372,8 +207,28 @@ exports.sendVerificationRequest = async (req, res) => {
     company.receivedRequests.push(verificationRequest);
     await company.save();
 
+    // Create notification for company
+    const Notification = require('../models/notification.model');
+
+    const companyNotification = new Notification({
+      type: 'company',
+      title: 'New Verification Request',
+      message: `${verificationRequest.employeeName} has requested verification for ${designation} position.`,
+      companyId: companyId,
+      relatedEmployeeId: employeeId,
+      requestId: requestId,
+    });
+    await companyNotification.save();
+
     res.status(200).json({
-      meta: { statusCode: 200, status: true, message: "Verification request sent successfully." },
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Verification request sent successfully."
+      },
+      data: {
+        requestId: requestId
+      }
     });
   } catch (error) {
     console.error("Error sending verification request:", error);
@@ -382,7 +237,6 @@ exports.sendVerificationRequest = async (req, res) => {
     });
   }
 };
-
 
 exports.getEmployeeVerificationRequests = async (req, res) => {
   try {
@@ -421,9 +275,9 @@ exports.updateVerificationStatus = async (req, res) => {
     const { employeeId, requestId } = req.params;
     const { status } = req.body;
 
-    if (!["Approved", "Rejected"].includes(status)) {
+    if (!status) {
       return res.status(400).json({
-        meta: { statusCode: 400, status: false, message: "Invalid status. Allowed: Approved, Rejected" },
+        meta: { statusCode: 400, status: false, message: "Status is required." },
       });
     }
 
@@ -434,19 +288,54 @@ exports.updateVerificationStatus = async (req, res) => {
       });
     }
 
-    // Find the verification request by ID
-    const request = employee.verificationRequests.find(req => req._id.toString() === requestId);
-    if (!request) {
+    const employeeRequest = employee.verificationRequests.find(
+      req => req._id.toString() === requestId
+    );
+
+    if (!employeeRequest) {
       return res.status(404).json({
-        meta: { statusCode: 404, status: false, message: "Verification request not found." },
+        meta: { statusCode: 404, status: false, message: "Verification request not found for this employee." },
       });
     }
 
-    request.status = status;
+    const company = await Company.findById(employeeRequest.companyId);
+    if (!company) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Associated company not found." },
+      });
+    }
+
+    const companyRequest = company.receivedRequests.find(
+      req => req._id.toString() === requestId
+    );
+
+    if (!companyRequest) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Verification request not found for this company." },
+      });
+    }
+
+    employeeRequest.status = status;
+    companyRequest.status = status;
+
+    if (status === 'Approved') {
+      const Notification = require('../models/notification.model');
+      const notification = new Notification({
+        type: 'employee',
+        title: 'Verification Request Approved',
+        message: `Your verification request to ${company.companyName} for the ${employeeRequest.designation} position has been approved.`,
+        employeeId: employeeId,
+        relatedCompanyId: company._id,
+        requestId: requestId,
+      });
+      await notification.save();
+    }
+
     await employee.save();
+    await company.save();
 
     return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Request ${status} successfully.` },
+      meta: { statusCode: 200, status: true, message: `Request status updated to ${status.toLowerCase()} successfully.` },
     });
   } catch (error) {
     console.error("Error updating verification status:", error);
@@ -462,8 +351,6 @@ exports.submitRating = async (req, res) => {
     const { employeeId } = req.params;
     const { status, rating, comment, selectedOptions } = req.body;
 
-    console.log("Employee ID in backend:", employeeId);
-
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return res.status(404).json({
@@ -476,7 +363,7 @@ exports.submitRating = async (req, res) => {
       comment,
       selectedOptions,
       date: new Date(),
-      status,
+      status: 'Approved',
     });
 
     await employee.save();
@@ -560,7 +447,7 @@ exports.getEmployeesByCompany = async (req, res) => {
   const { companyRefId } = req.params;
 
   try {
-    const employees = await Employee.find({ companyRefId });
+    const employees = await Employee.find({ companyRefId }).lean();
 
     if (!employees || employees.length === 0) {
       return res.status(404).json({
@@ -572,9 +459,28 @@ exports.getEmployeesByCompany = async (req, res) => {
         data: [],
       });
     }
+    const processedEmployees = employees.map(employee => {
+      const profilePic = employee.documents?.find(doc => doc.type === 'profilepic');
+      return {
+        ...employee,
+        profileImage: profilePic?.url || null
+      };
+    });
 
-    const blockedEmployees = employees.filter(emp => emp.isBlocked === true);
-    const unblockedEmployees = employees.filter(emp => emp.isBlocked === false);
+
+    const blockedEmployees = [];
+    const unblockedEmployees = [];
+
+    processedEmployees.forEach(employee => {
+
+      const companyBlock = employee.companyBlocks?.find(block => block.companyRefId === companyRefId);
+
+      if (companyBlock && companyBlock.isBlocked) {
+        blockedEmployees.push(employee);
+      } else {
+        unblockedEmployees.push(employee);
+      }
+    });
 
     res.status(200).json({
       meta: {
@@ -584,7 +490,8 @@ exports.getEmployeesByCompany = async (req, res) => {
       },
       data: {
         blocked: blockedEmployees,
-        unblocked: unblockedEmployees
+        unblocked: unblockedEmployees,
+
       },
     });
 
@@ -605,31 +512,41 @@ exports.getCompanies = async (req, res) => {
   const { companyRefId } = req.query;
 
   try {
-    console.log("Fetching companies...");
-
     const query = companyRefId ? { companyRefId: companyRefId } : {};
 
-    const companies = await Company.find(query);
-    console.log("Companies retrieved from database:", companies);
+    const companies = await Company.find(query)
+      .select('-password -otp -resetPasswordToken -resetPasswordExpires -__v')
+      .lean();
 
     if (!companies || companies.length === 0) {
       return res.status(404).json({
         meta: {
           statusCode: 404,
           status: false,
-          message: "No companies found with the given companyRefId."
+          message: "No companies found"
         },
         data: []
       });
     }
 
+    const companiesWithImages = companies.map(company => {
+      return {
+        ...company,
+        companyProfileImage: company.companyProfileImage
+          ? company.companyProfileImage.startsWith('http')
+            ? company.companyProfileImage
+            : `${process.env.S3_BASE_URL}/${company.companyProfileImage}`
+          : null
+      };
+    });
+
     res.status(200).json({
       meta: {
         statusCode: 200,
         status: true,
-        message: "Companies retrieved successfully."
+        message: "Companies retrieved successfully"
       },
-      data: companies
+      data: companiesWithImages
     });
 
   } catch (error) {
@@ -638,7 +555,7 @@ exports.getCompanies = async (req, res) => {
       meta: {
         statusCode: 500,
         status: false,
-        message: "Server error. Could not retrieve companies."
+        message: "Server error"
       }
     });
   }
@@ -647,9 +564,15 @@ exports.getCompanies = async (req, res) => {
 
 exports.blockEmployee = async (req, res) => {
   const { employeeId } = req.params;
-  const { isBlocked } = req.body;
+  const { isBlocked, comment, companyRefId } = req.body;
 
   try {
+    if (!companyRefId) {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: "companyRefId is required." }
+      });
+    }
+
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return res.status(404).json({
@@ -657,11 +580,31 @@ exports.blockEmployee = async (req, res) => {
       });
     }
 
-    employee.isBlocked = isBlocked;
+    if (!employee.companyBlocks) {
+      employee.companyBlocks = [];
+    }
+
+    let companyBlock = employee.companyBlocks.find(block => block.companyRefId === companyRefId);
+
+    if (companyBlock) {
+      companyBlock.isBlocked = isBlocked;
+      companyBlock.comment = comment;
+    } else {
+      employee.companyBlocks.push({
+        companyRefId: companyRefId,
+        isBlocked: isBlocked,
+        comment: comment,
+      });
+    }
+
     await employee.save();
 
     res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully.` }
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: `Employee ${isBlocked ? "blocked" : "unblocked"} successfully.`
+      }
     });
   } catch (error) {
     console.error("Error blocking employee:", error);
@@ -847,32 +790,184 @@ exports.verifyEmployment = async (req, res) => {
   }
 };
 
-
 exports.updateEmployee = async (req, res) => {
-  const { employeeId } = req.params;
-  const updatedData = req.body;
-
   try {
-    const updatedEmployee = await Employee.findByIdAndUpdate(
-      employeeId,
-      { ...updatedData },
-      { new: true, runValidators: true }
-    );
+    const { employeeId } = req.params;
+    const token = req.header("x-auth-token");
 
-    if (!updatedEmployee) {
-      return res.status(404).json({
-        meta: { status: false, message: "Employee not found." },
+    // Check if token is provided
+    if (!token) {
+      return res.status(401).json({
+        meta: { statusCode: 401, status: false, message: "No token provided." }
       });
     }
 
-    res.status(200).json({
-      meta: { status: true, message: "Employee updated successfully." },
-      data: updatedEmployee,
+    // Verify token and get employee ID
+    let actualEmployeeId = employeeId;
+
+    try {
+      const decoded = jwt.verify(token, config.get("jwtSecret"));
+      if (decoded && decoded.employee?.id) {
+        actualEmployeeId = decoded.employee.id;
+      }
+    } catch (tokenError) {
+      // If token verification fails, use the provided employeeId (for company updates)
+      console.log("Token verification failed, using provided employeeId");
+    }
+
+    const employee = await Employee.findById(actualEmployeeId);
+    if (!employee) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "Employee not found." }
+      });
+    }
+
+    const {
+      firstName, lastName, about, country, city, phoneNumber, email,
+      username, designation,
+      education, languages, employmentHistory, skills,
+      oldPassword, newPassword
+    } = req.body;
+
+    // Password update logic (only if both oldPassword and newPassword are provided)
+    if (oldPassword && newPassword) {
+      if (!employee.password) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "No password set for this account" }
+        });
+      }
+
+      const isMatch = await bcrypt.compare(oldPassword, employee.password);
+      if (!isMatch) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Old password is incorrect" }
+        });
+      }
+
+      // Password validation using existing schema pattern
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}:;"'<>,.?/|\\~`]).{8,}$/;
+      if (!passwordRegex.test(newPassword)) {
+        return res.status(400).json({
+          meta: {
+            statusCode: 400,
+            status: false,
+            message: "Password must contain at least one uppercase letter, one digit, one special character, and be at least 8 characters long"
+          }
+        });
+      }
+
+      // Check if new password is same as old password
+      if (oldPassword === newPassword) {
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "New password must be different from current password" }
+        });
+      }
+
+      employee.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    // Update basic info
+    if (firstName !== undefined) employee.firstName = firstName;
+    if (lastName !== undefined) employee.lastName = lastName;
+    if (username !== undefined) employee.username = username;
+    if (designation !== undefined) employee.designation = designation;
+    if (about !== undefined) employee.about = about;
+    if (country !== undefined) employee.country = country;
+    if (city !== undefined) employee.city = city;
+    if (phoneNumber !== undefined) employee.phoneNumber = phoneNumber;
+    // Note: Email is typically not updated for security reasons
+
+    // Update education with validation
+    if (education && Array.isArray(education)) {
+      const validEducation = education.map((edu) => ({
+        levelOfEducation: edu.levelOfEducation || "",
+        fieldOfStudy: edu.fieldOfStudy || "",
+        fromYear: edu.fromYear ? String(edu.fromYear) : "",
+        toYear: edu.toYear ? String(edu.toYear) : "",
+      }));
+      employee.education = validEducation;
+    }
+
+    // Update languages
+    if (languages && Array.isArray(languages)) {
+      const validLanguages = languages.map((lang) => ({
+        language: lang.language || "",
+        conversation: lang.conversation || lang.proficiency || ""
+      }));
+      employee.languages = validLanguages;
+    }
+
+    // Update employment history
+    if (employmentHistory && Array.isArray(employmentHistory)) {
+      const validEmployment = employmentHistory.map((emp) => ({
+        jobTitle: emp.jobTitle || "",
+        company: emp.company || "",
+        location: emp.location || "",
+        currentlyWorking: Boolean(emp.currentlyWorking),
+        fromMonth: emp.fromMonth || "",
+        fromYear: emp.fromYear || "",
+        toMonth: emp.currentlyWorking ? "" : (emp.toMonth || ""),
+        toYear: emp.currentlyWorking ? "" : (emp.toYear || ""),
+        type: emp.type || "",
+        description: emp.description || "",
+        verified: Boolean(emp.verified)
+      }));
+      employee.employmentHistory = validEmployment;
+    }
+
+    // Update skills
+    if (skills && Array.isArray(skills)) {
+      const validSkills = skills.map((skill) => {
+        if (typeof skill === 'string') {
+          return { skillName: skill };
+        }
+        return { skillName: skill.skillName || skill.name || skill };
+      }).filter(skill => skill.skillName); // Remove empty skills
+
+      employee.skills = validSkills;
+    }
+
+    employee.updatedAt = new Date();
+    await employee.save();
+
+    // Return success response
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "Employee profile updated successfully!" },
+      data: {
+        id: employee._id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        username: employee.username,
+        designation: employee.designation,
+        email: employee.email,
+        about: employee.about,
+        country: employee.country,
+        city: employee.city,
+        phoneNumber: employee.phoneNumber,
+        education: employee.education,
+        languages: employee.languages,
+        employmentHistory: employee.employmentHistory,
+        skills: employee.skills
+      }
     });
+
   } catch (error) {
     console.error("Error updating employee:", error);
-    res.status(500).json({
-      meta: { status: false, message: "Failed to update employee." },
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: "Invalid token provided!" }
+      });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        meta: { statusCode: 401, status: false, message: "Token expired. Please log in again." }
+      });
+    }
+
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Internal Server Error" }
     });
   }
 };
@@ -904,7 +999,6 @@ exports.loginEmployee = async (req, res) => {
       });
     }
 
-    // Generate a token
     const payload = {
       employee: {
         id: employee.id,
@@ -974,7 +1068,7 @@ exports.generateAndSendLink = async (req, res) => {
 
     res.setHeader('Authorization', `Bearer ${token}`);
 
-    const link = `${config.get("frontendBaseUrl")}/add-employee?token=${token}`;
+    const link = `${config.get("urlInviteForEmp")}/add-employee?token=${token}`;
     const emailBody = `Click the following link to register: ${link}`;
 
     await sendOtpEmail(email, emailBody);
@@ -995,6 +1089,107 @@ exports.generateAndSendLink = async (req, res) => {
         status: "error",
         message: "Error generating or sending the registration link.",
       },
+    });
+  }
+};
+
+
+exports.getEmployeeRatings = async (req, res) => {
+  const { employeeId } = req.params;
+
+  try {
+    const employee = await Employee.findById(employeeId);
+
+    if (!employee) {
+      return res.status(404).json({
+        meta: {
+          statusCode: 404,
+          status: false,
+          message: "Employee not found with the given ID."
+        },
+        data: null
+      });
+    }
+
+    const ratings = employee.ratings || [];
+
+    let averageRating = 0;
+    if (ratings.length > 0) {
+      const totalRating = ratings.reduce((sum, rating) => sum + rating.rating, 0);
+      averageRating = (totalRating / ratings.length).toFixed(1);
+    }
+
+    const approvedRatings = ratings.filter(rating => rating.status === "Approved");
+
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Employee ratings retrieved successfully."
+      },
+      data: {
+        averageRating,
+        totalReviews: ratings.length,
+        approvedReviews: approvedRatings.length,
+        ratings: approvedRatings
+      }
+    });
+  } catch (error) {
+    console.error("Error retrieving employee ratings:", error);
+    return res.status(500).json({
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Server error. Could not retrieve employee ratings."
+      },
+      data: null
+    });
+  }
+};
+
+
+exports.getAllEmployees = async (req, res) => {
+  try {
+    const employees = await Employee.find({})
+      .select('-password -otp -isEmailVerified -__v')
+      .lean();
+
+    if (!employees || employees.length === 0) {
+      return res.status(404).json({
+        meta: {
+          statusCode: 404,
+          status: false,
+          message: "No employees found."
+        },
+        data: []
+      });
+    }
+
+    const employeesWithImages = employees.map(employee => {
+      const profilePic = employee.documents?.find(d => d.type === 'profilepic');
+      return {
+        ...employee,
+        profileImageURL: profilePic?.url || null
+      };
+    });
+
+    res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Employees retrieved successfully.",
+        count: employees.length
+      },
+      data: employeesWithImages
+    });
+  } catch (error) {
+    console.error("Error retrieving employees:", error);
+    res.status(500).json({
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Server error. Could not retrieve employees."
+      }
     });
   }
 };
