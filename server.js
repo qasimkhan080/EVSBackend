@@ -24,7 +24,7 @@ app.use('/api/notifications', notificationRoutes)
 
 
 
-const PORT = 5000;
+const PORT = 3001;
 server.listen(PORT, () => {
   console.log('server started on port' + PORT)
 });
