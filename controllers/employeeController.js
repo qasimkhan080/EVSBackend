@@ -825,7 +825,7 @@ exports.updateEmployee = async (req, res) => {
     const {
       firstName, lastName, about, country, city, phoneNumber, email,
       username, designation,
-      education, languages, employmentHistory, skills,
+      education, languages, employmentHistory, skills, certifications,
       oldPassword, newPassword
     } = req.body;
 
@@ -888,6 +888,23 @@ exports.updateEmployee = async (req, res) => {
       employee.education = validEducation;
     }
 
+    if (certifications && Array.isArray(certifications)) {
+      const validCertifications = certifications.map(cert => ({
+        institution: cert.institution || "",
+        certificationName: cert.certificationName || "",
+        credentialId: cert.credentialId || "",
+        fromMonth: cert.fromMonth || "",
+        fromYear: cert.fromYear || "",
+        toMonth: cert.currentlyStudying ? "" : (cert.toMonth || ""),
+        toYear: cert.currentlyStudying ? "" : (cert.toYear || ""),
+        currentlyStudying: Boolean(cert.currentlyStudying),
+        description: cert.description || "",
+        image: cert.image || ""
+      }));
+
+      employee.certifications = validCertifications;
+    }
+
     // Update languages
     if (languages && Array.isArray(languages)) {
       const validLanguages = languages.map((lang) => ({
@@ -945,6 +962,7 @@ exports.updateEmployee = async (req, res) => {
         city: employee.city,
         phoneNumber: employee.phoneNumber,
         education: employee.education,
+        certifications: employee.certifications,
         languages: employee.languages,
         employmentHistory: employee.employmentHistory,
         skills: employee.skills

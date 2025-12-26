@@ -36,6 +36,32 @@ const employeeSchema = mongoose.Schema({
             toYear: { type: String },
         },
     ],
+    certifications: [
+        {
+            institution: { type: String, required: false },
+            certificationName: { type: String, required: false },
+            credentialId: { type: String, required: false },
+            fromMonth: { type: String },
+            fromYear: { type: String },
+            toMonth: {
+                type: String,
+                required: function () {
+                    return !this.currentlyStudying;
+                },
+            },
+            toYear: {
+                type: String,
+                required: function () {
+                    return !this.currentlyStudying;
+                },
+            },
+            currentlyStudying: { type: Boolean, default: false },
+            description: { type: String, default: "" },
+            image: { type: String, required: false },
+
+            createdAt: { type: Date, default: Date.now }
+        }
+    ],
     languages: [
         {
             language: { type: String, required: false },
