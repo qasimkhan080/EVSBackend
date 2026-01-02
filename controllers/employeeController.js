@@ -82,11 +82,11 @@ exports.addEmployee = async (req, res) => {
     if (existingEmployee)
       return res.status(400).json({ meta: { statusCode: 400, status: false, message: `Already have an account on ${email}` } });
     if (sso === true) {
-      if (!firstName || !lastName)
+      if (!firstName)
         return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Name is required" } });
       const employee = await Employee.create({
         firstName,
-        lastName,
+        lastName: lastName ?? "",
         email,
         sso: true,
         isEmailVerified: true,
@@ -794,41 +794,32 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const token = req.header("x-auth-token");
-
-    // Check if token is provided
     if (!token) {
       return res.status(401).json({
         meta: { statusCode: 401, status: false, message: "No token provided." }
       });
     }
-
-    // Verify token and get employee ID
     let actualEmployeeId = employeeId;
-
     try {
       const decoded = jwt.verify(token, config.get("jwtSecret"));
       if (decoded && decoded.employee?.id) {
         actualEmployeeId = decoded.employee.id;
       }
     } catch (tokenError) {
-      // If token verification fails, use the provided employeeId (for company updates)
       console.log("Token verification failed, using provided employeeId");
     }
-
     const employee = await Employee.findById(actualEmployeeId);
     if (!employee) {
       return res.status(404).json({
         meta: { statusCode: 404, status: false, message: "Employee not found." }
       });
     }
-
     const {
       firstName, lastName, about, country, city, phoneNumber, email,
       username, designation,
       education, languages, employmentHistory, skills, certifications,
-      oldPassword, newPassword
+      oldPassword, newPassword, socialLinks
     } = req.body;
-
     // Password update logic (only if both oldPassword and newPassword are provided)
     if (oldPassword && newPassword) {
       if (!employee.password) {
@@ -836,15 +827,12 @@ exports.updateEmployee = async (req, res) => {
           meta: { statusCode: 400, status: false, message: "No password set for this account" }
         });
       }
-
       const isMatch = await bcrypt.compare(oldPassword, employee.password);
       if (!isMatch) {
         return res.status(400).json({
           meta: { statusCode: 400, status: false, message: "Old password is incorrect" }
         });
       }
-
-      // Password validation using existing schema pattern
       const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}:;"'<>,.?/|\\~`]).{8,}$/;
       if (!passwordRegex.test(newPassword)) {
         return res.status(400).json({
@@ -855,18 +843,13 @@ exports.updateEmployee = async (req, res) => {
           }
         });
       }
-
-      // Check if new password is same as old password
       if (oldPassword === newPassword) {
         return res.status(400).json({
           meta: { statusCode: 400, status: false, message: "New password must be different from current password" }
         });
       }
-
       employee.password = await bcrypt.hash(newPassword, 10);
     }
-
-    // Update basic info
     if (firstName !== undefined) employee.firstName = firstName;
     if (lastName !== undefined) employee.lastName = lastName;
     if (username !== undefined) employee.username = username;
@@ -875,9 +858,6 @@ exports.updateEmployee = async (req, res) => {
     if (country !== undefined) employee.country = country;
     if (city !== undefined) employee.city = city;
     if (phoneNumber !== undefined) employee.phoneNumber = phoneNumber;
-    // Note: Email is typically not updated for security reasons
-
-    // Update education with validation
     if (education && Array.isArray(education)) {
       const validEducation = education.map((edu) => ({
         levelOfEducation: edu.levelOfEducation || "",
@@ -887,7 +867,6 @@ exports.updateEmployee = async (req, res) => {
       }));
       employee.education = validEducation;
     }
-
     if (certifications && Array.isArray(certifications)) {
       const validCertifications = certifications.map(cert => ({
         institution: cert.institution || "",
@@ -901,11 +880,8 @@ exports.updateEmployee = async (req, res) => {
         description: cert.description || "",
         image: cert.image || ""
       }));
-
       employee.certifications = validCertifications;
     }
-
-    // Update languages
     if (languages && Array.isArray(languages)) {
       const validLanguages = languages.map((lang) => ({
         language: lang.language || "",
@@ -913,8 +889,6 @@ exports.updateEmployee = async (req, res) => {
       }));
       employee.languages = validLanguages;
     }
-
-    // Update employment history
     if (employmentHistory && Array.isArray(employmentHistory)) {
       const validEmployment = employmentHistory.map((emp) => ({
         jobTitle: emp.jobTitle || "",
@@ -931,19 +905,39 @@ exports.updateEmployee = async (req, res) => {
       }));
       employee.employmentHistory = validEmployment;
     }
-
-    // Update skills
     if (skills && Array.isArray(skills)) {
       const validSkills = skills.map((skill) => {
         if (typeof skill === 'string') {
           return { skillName: skill };
         }
         return { skillName: skill.skillName || skill.name || skill };
-      }).filter(skill => skill.skillName); // Remove empty skills
+      }).filter(skill => skill.skillName); 
 
       employee.skills = validSkills;
     }
-
+    const DEFAULT_SOCIAL_PLATFORMS = ["linkedin", "github", "behance", "dribbble"];
+    if (socialLinks && Array.isArray(socialLinks)) {
+      const defaults = DEFAULT_SOCIAL_PLATFORMS.map(platform => ({
+        platform,
+        url: ""
+      }));
+      const incomingLinks = socialLinks.map(link => ({
+        platform: link.platform || "",
+        url: link.url || ""
+      }));
+      const validLinks = [...defaults];
+      incomingLinks.forEach(link => {
+        const index = validLinks.findIndex(
+          d => d.platform.toLowerCase() === link.platform.toLowerCase()
+        );
+        if (index !== -1) {
+          validLinks[index].url = link.url;
+        } else if (link.url) {
+          validLinks.push(link);
+        }
+      });
+      employee.socialLinks = validLinks.slice(0, 6);
+    }
     employee.updatedAt = new Date();
     await employee.save();
 
@@ -965,7 +959,8 @@ exports.updateEmployee = async (req, res) => {
         certifications: employee.certifications,
         languages: employee.languages,
         employmentHistory: employee.employmentHistory,
-        skills: employee.skills
+        skills: employee.skills,
+        socialLinks: employee.socialLinks
       }
     });
 

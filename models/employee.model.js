@@ -14,7 +14,7 @@ const documentSchema = new mongoose.Schema({
 });
 const employeeSchema = mongoose.Schema({
     firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
+    lastName: { type: String, default: "" },
     username: { type: String, required: false },
     designation: { type: String, required: false },
     email: { type: String, required: true, unique: true },
@@ -98,6 +98,13 @@ const employeeSchema = mongoose.Schema({
         },
     ],
     skills: [{ skillName: { type: String, required: false } }],
+    socialLinks: [
+        {
+            platform: { type: String, required: true }, 
+            label: { type: String }, 
+            url: { type: String, required: true }
+        }
+    ],
     companyRefId: { type: String, required: false },
     selfEnrolled: { type: Boolean, required: true },
     createdAt: { type: Date, default: Date.now },
