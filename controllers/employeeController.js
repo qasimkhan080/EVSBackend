@@ -860,10 +860,16 @@ exports.updateEmployee = async (req, res) => {
     if (phoneNumber !== undefined) employee.phoneNumber = phoneNumber;
     if (education && Array.isArray(education)) {
       const validEducation = education.map((edu) => ({
+        institution: edu.institution || "",
         levelOfEducation: edu.levelOfEducation || "",
         fieldOfStudy: edu.fieldOfStudy || "",
-        fromYear: edu.fromYear ? String(edu.fromYear) : "",
-        toYear: edu.toYear ? String(edu.toYear) : "",
+        fromMonth: edu.fromMonth || "",
+        fromYear: edu.fromYear || "",
+        toMonth: edu.currentlyStudying ? "" : (edu.toMonth || ""),
+        toYear: edu.currentlyStudying ? "" : (edu.toYear || ""),
+        currentlyStudying: Boolean(edu.currentlyStudying),
+        description: edu.description || "",
+        image: edu.image || ""
       }));
       employee.education = validEducation;
     }
@@ -911,7 +917,7 @@ exports.updateEmployee = async (req, res) => {
           return { skillName: skill };
         }
         return { skillName: skill.skillName || skill.name || skill };
-      }).filter(skill => skill.skillName); 
+      }).filter(skill => skill.skillName);
 
       employee.skills = validSkills;
     }
