@@ -75,46 +75,103 @@ const employeeSchema = Joi.object({
 
 exports.addEmployee = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, sso, selfEnrolled } = req.body;
-    if (!email)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is required" } });
-    const existingEmployee = await Employee.findOne({ email });
-    if (existingEmployee)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: `Already have an account on ${email}` } });
+    const { email, password, sso, selfEnrolled } = req.body;
     if (sso === true) {
-      if (!firstName || !lastName)
-        return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Name is required" } });
+      if (!email)
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Email is required" }
+        });
+      const existingEmployee = await Employee.findOne({ email });
+      if (existingEmployee)
+        return res.status(409).json({
+          meta: { statusCode: 409, status: false, message: `Already have an account on ${email}` }
+        });
       const employee = await Employee.create({
-        firstName,
-        lastName,
         email,
         sso: true,
         isEmailVerified: true,
         selfEnrolled: true
       });
-      const token = jwt.sign({ id: employee.id, sso: true }, config.get("jwtSecret"), { expiresIn: config.get("TokenExpire") });
+      const token = jwt.sign(
+        { id: employee.id, sso: true },
+        config.get("jwtSecret"),
+        { expiresIn: config.get("TokenExpire") }
+      );
+
       return res.status(200).json({
         data: { token },
         meta: { statusCode: 200, status: true, message: "SSO signup successful" }
       });
     }
-    if (!password)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Password is required" } });
-    const otp = generateOtp();
-    const otpHash = await bcrypt.hash(otp, 10);
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await Employee.create({
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      otp: otpHash,
-      otpExpiresAt: Date.now() + 5 * 60 * 1000,
-      isEmailVerified: false,
-      selfEnrolled: selfEnrolled ?? true
+    const schema = Joi.object({
+      email: Joi.string()
+        .email({ tlds: { allow: false } })
+        .max(40)
+        .required()
+        .messages({
+          "string.email": "Invalid email format.",
+          "string.max": "Email must not exceed 40 characters.",
+          "any.required": "Email is required."
+        }),
+      password: Joi.string()
+        .min(8)
+        .pattern(
+          new RegExp(
+            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$"
+          )
+        )
+        .required()
+        .messages({
+          "string.min": "Password must be at least 8 characters long.",
+          "string.pattern.base":
+            "Password must contain uppercase, lowercase, number & special character.",
+          "any.required": "Password is required."
+        })
     });
+
+    const { error } = schema.validate({ email, password });
+    if (error) {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: error.details[0].message }
+      });
+    }
+
+    const existingEmployee = await Employee.findOne({ email });
+    if (existingEmployee) {
+      return res.status(409).json({
+        meta: { statusCode: 409, status: false, message: "Email already in use!" }
+      });
+    }
+
+    const otp = generateOtp();
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const authToken = jwt.sign(
+      { email, password: hashedPassword, selfEnrolled: selfEnrolled ?? true },
+      config.get("AuthSecret"),
+      { expiresIn: "1h" }
+    );
+
+    const otpToken = jwt.sign(
+      { email, otp, password: hashedPassword },
+      config.get("OtpSecret"),
+      { expiresIn: "2m" }
+    );
+
     await sendOtpEmail(email, otp);
-    return res.status(200).json({ meta: { statusCode: 200, status: true, message: `OTP sent to ${email}` } });
+
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "OTP sent successfully. Verify within 2 minutes."
+      },
+      data: {
+        authToken,
+        otpToken
+      }
+    });
+
   } catch (error) {
     console.error("Add Employee Error:", error);
     return res.status(500).json({
@@ -123,35 +180,113 @@ exports.addEmployee = async (req, res) => {
   }
 };
 
+
 exports.verifyEmployeeOtp = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    if (!email || !otp)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email and OTP are required" } });
-    const employee = await Employee.findOne({ email });
-    if (!employee)
-      return res.status(404).json({ meta: { statusCode: 404, status: false, message: "Employee not found" } });
-    if (employee.isEmailVerified)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is already verified" } });
-    if (!employee.otp || Date.now() > employee.otpExpiresAt)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "OTP expired" } });
-    const isMatch = await bcrypt.compare(otp.toString(), employee.otp);
-    if (!isMatch)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Invalid OTP" } });
-    employee.isEmailVerified = true;
-    employee.otp = null;
-    employee.otpExpiresAt = null;
-    await employee.save();
-    return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: "Email verified successfully" }
+  const otpToken = req.header("x-auth-token");
+
+  if (!otpToken) {
+    return res.status(401).json({
+      meta: {
+        statusCode: 401,
+        status: false,
+        message: "No OTP token provided"
+      }
     });
+  }
+
+  try {
+    const decoded = jwt.verify(otpToken, config.get("OtpSecret"));
+
+    if (!decoded.email || !decoded.otp || !decoded.password) {
+      return res.status(401).json({
+        meta: {
+          statusCode: 401,
+          status: false,
+          message: "Invalid or expired OTP token"
+        }
+      });
+    }
+
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({
+        meta: {
+          statusCode: 400,
+          status: false,
+          message: "OTP is required"
+        }
+      });
+    }
+
+    if (otp !== decoded.otp) {
+      return res.status(400).json({
+        meta: {
+          statusCode: 400,
+          status: false,
+          message: "Incorrect OTP"
+        }
+      });
+    }
+
+    let employee = await Employee.findOne({ email: decoded.email });
+
+    if (!employee) {
+      employee = await Employee.create({
+        email: decoded.email,
+        password: decoded.password,
+        isEmailVerified: true,
+        selfEnrolled: decoded.selfEnrolled ?? true,
+        sso: false
+      });
+    } else {
+      employee.isEmailVerified = true;
+      await employee.save();
+    }
+
+    const authToken = jwt.sign(
+      { id: employee._id, email: employee.email },
+      config.get("jwtSecret"),
+      { expiresIn: config.get("TokenExpire") }
+    );
+
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Email verified successfully"
+      },
+      data: {
+        authToken,
+        employee: {
+          email: employee.email,
+          isEmailVerified: employee.isEmailVerified
+        }
+      }
+    });
+
   } catch (error) {
-    console.error("Verify OTP Error:", error);
+    console.error("Verify Employee OTP Error:", error);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        meta: {
+          statusCode: 401,
+          status: false,
+          message: "OTP token expired. Please request again."
+        }
+      });
+    }
+
     return res.status(500).json({
-      meta: { statusCode: 500, status: false, message: "Internal server error" }
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Internal server error"
+      }
     });
   }
 };
+
 
 
 exports.sendVerificationRequest = async (req, res) => {
@@ -794,41 +929,32 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { employeeId } = req.params;
     const token = req.header("x-auth-token");
-
-    // Check if token is provided
     if (!token) {
       return res.status(401).json({
         meta: { statusCode: 401, status: false, message: "No token provided." }
       });
     }
-
-    // Verify token and get employee ID
     let actualEmployeeId = employeeId;
-
     try {
       const decoded = jwt.verify(token, config.get("jwtSecret"));
       if (decoded && decoded.employee?.id) {
         actualEmployeeId = decoded.employee.id;
       }
     } catch (tokenError) {
-      // If token verification fails, use the provided employeeId (for company updates)
       console.log("Token verification failed, using provided employeeId");
     }
-
     const employee = await Employee.findById(actualEmployeeId);
     if (!employee) {
       return res.status(404).json({
         meta: { statusCode: 404, status: false, message: "Employee not found." }
       });
     }
-
     const {
       firstName, lastName, about, country, city, phoneNumber, email,
       username, designation,
-      education, languages, employmentHistory, skills,
-      oldPassword, newPassword
+      education, languages, employmentHistory, skills, certifications,
+      oldPassword, newPassword, socialLinks
     } = req.body;
-
     // Password update logic (only if both oldPassword and newPassword are provided)
     if (oldPassword && newPassword) {
       if (!employee.password) {
@@ -836,15 +962,12 @@ exports.updateEmployee = async (req, res) => {
           meta: { statusCode: 400, status: false, message: "No password set for this account" }
         });
       }
-
       const isMatch = await bcrypt.compare(oldPassword, employee.password);
       if (!isMatch) {
         return res.status(400).json({
           meta: { statusCode: 400, status: false, message: "Old password is incorrect" }
         });
       }
-
-      // Password validation using existing schema pattern
       const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}:;"'<>,.?/|\\~`]).{8,}$/;
       if (!passwordRegex.test(newPassword)) {
         return res.status(400).json({
@@ -855,18 +978,13 @@ exports.updateEmployee = async (req, res) => {
           }
         });
       }
-
-      // Check if new password is same as old password
       if (oldPassword === newPassword) {
         return res.status(400).json({
           meta: { statusCode: 400, status: false, message: "New password must be different from current password" }
         });
       }
-
       employee.password = await bcrypt.hash(newPassword, 10);
     }
-
-    // Update basic info
     if (firstName !== undefined) employee.firstName = firstName;
     if (lastName !== undefined) employee.lastName = lastName;
     if (username !== undefined) employee.username = username;
@@ -875,20 +993,36 @@ exports.updateEmployee = async (req, res) => {
     if (country !== undefined) employee.country = country;
     if (city !== undefined) employee.city = city;
     if (phoneNumber !== undefined) employee.phoneNumber = phoneNumber;
-    // Note: Email is typically not updated for security reasons
-
-    // Update education with validation
     if (education && Array.isArray(education)) {
       const validEducation = education.map((edu) => ({
+        institution: edu.institution || "",
         levelOfEducation: edu.levelOfEducation || "",
         fieldOfStudy: edu.fieldOfStudy || "",
-        fromYear: edu.fromYear ? String(edu.fromYear) : "",
-        toYear: edu.toYear ? String(edu.toYear) : "",
+        fromMonth: edu.fromMonth || "",
+        fromYear: edu.fromYear || "",
+        toMonth: edu.currentlyStudying ? "" : (edu.toMonth || ""),
+        toYear: edu.currentlyStudying ? "" : (edu.toYear || ""),
+        currentlyStudying: Boolean(edu.currentlyStudying),
+        description: edu.description || "",
+        image: edu.image || ""
       }));
       employee.education = validEducation;
     }
-
-    // Update languages
+    if (certifications && Array.isArray(certifications)) {
+      const validCertifications = certifications.map(cert => ({
+        institution: cert.institution || "",
+        certificationName: cert.certificationName || "",
+        credentialId: cert.credentialId || "",
+        fromMonth: cert.fromMonth || "",
+        fromYear: cert.fromYear || "",
+        toMonth: cert.currentlyStudying ? "" : (cert.toMonth || ""),
+        toYear: cert.currentlyStudying ? "" : (cert.toYear || ""),
+        currentlyStudying: Boolean(cert.currentlyStudying),
+        description: cert.description || "",
+        image: cert.image || ""
+      }));
+      employee.certifications = validCertifications;
+    }
     if (languages && Array.isArray(languages)) {
       const validLanguages = languages.map((lang) => ({
         language: lang.language || "",
@@ -896,8 +1030,6 @@ exports.updateEmployee = async (req, res) => {
       }));
       employee.languages = validLanguages;
     }
-
-    // Update employment history
     if (employmentHistory && Array.isArray(employmentHistory)) {
       const validEmployment = employmentHistory.map((emp) => ({
         jobTitle: emp.jobTitle || "",
@@ -914,19 +1046,39 @@ exports.updateEmployee = async (req, res) => {
       }));
       employee.employmentHistory = validEmployment;
     }
-
-    // Update skills
     if (skills && Array.isArray(skills)) {
       const validSkills = skills.map((skill) => {
         if (typeof skill === 'string') {
           return { skillName: skill };
         }
         return { skillName: skill.skillName || skill.name || skill };
-      }).filter(skill => skill.skillName); // Remove empty skills
+      }).filter(skill => skill.skillName);
 
       employee.skills = validSkills;
     }
-
+    const DEFAULT_SOCIAL_PLATFORMS = ["linkedin", "github", "behance", "dribbble"];
+    if (socialLinks && Array.isArray(socialLinks)) {
+      const defaults = DEFAULT_SOCIAL_PLATFORMS.map(platform => ({
+        platform,
+        url: ""
+      }));
+      const incomingLinks = socialLinks.map(link => ({
+        platform: link.platform || "",
+        url: link.url || ""
+      }));
+      const validLinks = [...defaults];
+      incomingLinks.forEach(link => {
+        const index = validLinks.findIndex(
+          d => d.platform.toLowerCase() === link.platform.toLowerCase()
+        );
+        if (index !== -1) {
+          validLinks[index].url = link.url;
+        } else if (link.url) {
+          validLinks.push(link);
+        }
+      });
+      employee.socialLinks = validLinks.slice(0, 6);
+    }
     employee.updatedAt = new Date();
     await employee.save();
 
@@ -945,9 +1097,11 @@ exports.updateEmployee = async (req, res) => {
         city: employee.city,
         phoneNumber: employee.phoneNumber,
         education: employee.education,
+        certifications: employee.certifications,
         languages: employee.languages,
         employmentHistory: employee.employmentHistory,
-        skills: employee.skills
+        skills: employee.skills,
+        socialLinks: employee.socialLinks
       }
     });
 
