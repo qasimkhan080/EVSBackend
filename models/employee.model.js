@@ -13,12 +13,14 @@ const documentSchema = new mongoose.Schema({
     uniqueId: { type: String }
 });
 const employeeSchema = mongoose.Schema({
-    firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
+    firstName: { type: String, required: false },
+    lastName: { type: String, required: false },
     username: { type: String, required: false },
     designation: { type: String, required: false },
     email: { type: String, required: true, unique: true },
-    password: { type: String, required: false, minlength: 6 },
+    password: { type: String, required: true },
+    otp: { type: Number, default: 0 },
+    otpCount: { type: Number, default: 1 },
     about: { type: String, default: "" },
     companyLogo: { type: String, required: false },
     resetPasswordToken: { type: String },
@@ -30,10 +32,28 @@ const employeeSchema = mongoose.Schema({
     isEmailVerified: { type: Boolean, default: false },
     education: [
         {
+            institution: { type: String, required: false },
             levelOfEducation: { type: String, required: false },
             fieldOfStudy: { type: String, required: false },
+            fromMonth: { type: String },
             fromYear: { type: String },
-            toYear: { type: String },
+            toMonth: {
+                type: String,
+                required: function () {
+                    return !this.currentlyStudying;
+                },
+            },
+            toYear: {
+                type: String,
+                required: function () {
+                    return !this.currentlyStudying;
+                },
+            },
+            currentlyStudying: { type: Boolean, default: false },
+            description: { type: String, default: "" },
+            image: { type: String, required: false },
+
+            createdAt: { type: Date, default: Date.now }
         },
     ],
     certifications: [
@@ -98,6 +118,13 @@ const employeeSchema = mongoose.Schema({
         },
     ],
     skills: [{ skillName: { type: String, required: false } }],
+    socialLinks: [
+        {
+            platform: { type: String, required: true },
+            label: { type: String },
+            url: { type: String, required: true }
+        }
+    ],
     companyRefId: { type: String, required: false },
     selfEnrolled: { type: Boolean, required: true },
     createdAt: { type: Date, default: Date.now },
