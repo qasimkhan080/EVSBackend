@@ -75,46 +75,103 @@ const employeeSchema = Joi.object({
 
 exports.addEmployee = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, sso, selfEnrolled } = req.body;
-    if (!email)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is required" } });
-    const existingEmployee = await Employee.findOne({ email });
-    if (existingEmployee)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: `Already have an account on ${email}` } });
+    const { email, password, sso, selfEnrolled } = req.body;
     if (sso === true) {
-      if (!firstName)
-        return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Name is required" } });
+      if (!email)
+        return res.status(400).json({
+          meta: { statusCode: 400, status: false, message: "Email is required" }
+        });
+      const existingEmployee = await Employee.findOne({ email });
+      if (existingEmployee)
+        return res.status(409).json({
+          meta: { statusCode: 409, status: false, message: `Already have an account on ${email}` }
+        });
       const employee = await Employee.create({
-        firstName,
-        lastName: lastName ?? "",
         email,
         sso: true,
         isEmailVerified: true,
         selfEnrolled: true
       });
-      const token = jwt.sign({ id: employee.id, sso: true }, config.get("jwtSecret"), { expiresIn: config.get("TokenExpire") });
+      const token = jwt.sign(
+        { id: employee.id, sso: true },
+        config.get("jwtSecret"),
+        { expiresIn: config.get("TokenExpire") }
+      );
+
       return res.status(200).json({
         data: { token },
         meta: { statusCode: 200, status: true, message: "SSO signup successful" }
       });
     }
-    if (!password)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Password is required" } });
-    const otp = generateOtp();
-    const otpHash = await bcrypt.hash(otp, 10);
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await Employee.create({
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      otp: otpHash,
-      otpExpiresAt: Date.now() + 5 * 60 * 1000,
-      isEmailVerified: false,
-      selfEnrolled: selfEnrolled ?? true
+    const schema = Joi.object({
+      email: Joi.string()
+        .email({ tlds: { allow: false } })
+        .max(40)
+        .required()
+        .messages({
+          "string.email": "Invalid email format.",
+          "string.max": "Email must not exceed 40 characters.",
+          "any.required": "Email is required."
+        }),
+      password: Joi.string()
+        .min(8)
+        .pattern(
+          new RegExp(
+            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$"
+          )
+        )
+        .required()
+        .messages({
+          "string.min": "Password must be at least 8 characters long.",
+          "string.pattern.base":
+            "Password must contain uppercase, lowercase, number & special character.",
+          "any.required": "Password is required."
+        })
     });
+
+    const { error } = schema.validate({ email, password });
+    if (error) {
+      return res.status(400).json({
+        meta: { statusCode: 400, status: false, message: error.details[0].message }
+      });
+    }
+
+    const existingEmployee = await Employee.findOne({ email });
+    if (existingEmployee) {
+      return res.status(409).json({
+        meta: { statusCode: 409, status: false, message: "Email already in use!" }
+      });
+    }
+
+    const otp = generateOtp();
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const authToken = jwt.sign(
+      { email, password: hashedPassword, selfEnrolled: selfEnrolled ?? true },
+      config.get("AuthSecret"),
+      { expiresIn: "1h" }
+    );
+
+    const otpToken = jwt.sign(
+      { email, otp, password: hashedPassword },
+      config.get("OtpSecret"),
+      { expiresIn: "2m" }
+    );
+
     await sendOtpEmail(email, otp);
-    return res.status(200).json({ meta: { statusCode: 200, status: true, message: `OTP sent to ${email}` } });
+
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "OTP sent successfully. Verify within 2 minutes."
+      },
+      data: {
+        authToken,
+        otpToken
+      }
+    });
+
   } catch (error) {
     console.error("Add Employee Error:", error);
     return res.status(500).json({
@@ -123,35 +180,113 @@ exports.addEmployee = async (req, res) => {
   }
 };
 
+
 exports.verifyEmployeeOtp = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    if (!email || !otp)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email and OTP are required" } });
-    const employee = await Employee.findOne({ email });
-    if (!employee)
-      return res.status(404).json({ meta: { statusCode: 404, status: false, message: "Employee not found" } });
-    if (employee.isEmailVerified)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is already verified" } });
-    if (!employee.otp || Date.now() > employee.otpExpiresAt)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "OTP expired" } });
-    const isMatch = await bcrypt.compare(otp.toString(), employee.otp);
-    if (!isMatch)
-      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Invalid OTP" } });
-    employee.isEmailVerified = true;
-    employee.otp = null;
-    employee.otpExpiresAt = null;
-    await employee.save();
-    return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: "Email verified successfully" }
+  const otpToken = req.header("x-auth-token");
+
+  if (!otpToken) {
+    return res.status(401).json({
+      meta: {
+        statusCode: 401,
+        status: false,
+        message: "No OTP token provided"
+      }
     });
+  }
+
+  try {
+    const decoded = jwt.verify(otpToken, config.get("OtpSecret"));
+
+    if (!decoded.email || !decoded.otp || !decoded.password) {
+      return res.status(401).json({
+        meta: {
+          statusCode: 401,
+          status: false,
+          message: "Invalid or expired OTP token"
+        }
+      });
+    }
+
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({
+        meta: {
+          statusCode: 400,
+          status: false,
+          message: "OTP is required"
+        }
+      });
+    }
+
+    if (otp !== decoded.otp) {
+      return res.status(400).json({
+        meta: {
+          statusCode: 400,
+          status: false,
+          message: "Incorrect OTP"
+        }
+      });
+    }
+
+    let employee = await Employee.findOne({ email: decoded.email });
+
+    if (!employee) {
+      employee = await Employee.create({
+        email: decoded.email,
+        password: decoded.password,
+        isEmailVerified: true,
+        selfEnrolled: decoded.selfEnrolled ?? true,
+        sso: false
+      });
+    } else {
+      employee.isEmailVerified = true;
+      await employee.save();
+    }
+
+    const authToken = jwt.sign(
+      { id: employee._id, email: employee.email },
+      config.get("jwtSecret"),
+      { expiresIn: config.get("TokenExpire") }
+    );
+
+    return res.status(200).json({
+      meta: {
+        statusCode: 200,
+        status: true,
+        message: "Email verified successfully"
+      },
+      data: {
+        authToken,
+        employee: {
+          email: employee.email,
+          isEmailVerified: employee.isEmailVerified
+        }
+      }
+    });
+
   } catch (error) {
-    console.error("Verify OTP Error:", error);
+    console.error("Verify Employee OTP Error:", error);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        meta: {
+          statusCode: 401,
+          status: false,
+          message: "OTP token expired. Please request again."
+        }
+      });
+    }
+
     return res.status(500).json({
-      meta: { statusCode: 500, status: false, message: "Internal server error" }
+      meta: {
+        statusCode: 500,
+        status: false,
+        message: "Internal server error"
+      }
     });
   }
 };
+
 
 
 exports.sendVerificationRequest = async (req, res) => {

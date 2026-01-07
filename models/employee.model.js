@@ -13,12 +13,14 @@ const documentSchema = new mongoose.Schema({
     uniqueId: { type: String }
 });
 const employeeSchema = mongoose.Schema({
-    firstName: { type: String, required: true },
-    lastName: { type: String, default: "" },
+    firstName: { type: String, required: false },
+    lastName: { type: String, required: false },
     username: { type: String, required: false },
     designation: { type: String, required: false },
     email: { type: String, required: true, unique: true },
-    password: { type: String, required: false, minlength: 6 },
+    password: { type: String, required: true },
+    otp: { type: Number, default: 0 },
+    otpCount: { type: Number, default: 1 },
     about: { type: String, default: "" },
     companyLogo: { type: String, required: false },
     resetPasswordToken: { type: String },
