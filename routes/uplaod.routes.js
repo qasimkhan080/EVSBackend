@@ -17,7 +17,7 @@ router.post("/education", upload.education.single("file"), uploadController.uplo
 
 router.get("/documents/:userId", uploadController.getEmployeeDocuments);
 
-router.delete("/document/:userId/:documentId", uploadController.deleteDocument);
+router.delete("/document/:userId/:documentId/:documentType", uploadController.deleteDocument);
 
 router.post('/companyprofileimage', upload.companyProfileImage.single('file'), uploadController.uploadCompanyProfileImage);
 

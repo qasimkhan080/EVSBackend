@@ -73,332 +73,82 @@ const employeeSchema = Joi.object({
 
 });
 
-
 exports.addEmployee = async (req, res) => {
   try {
-    const { sso, email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: "Email is required.",
-        },
-      });
-    }
-
+    const { firstName, lastName, email, password, sso, selfEnrolled } = req.body;
+    if (!email)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is required" } });
     const existingEmployee = await Employee.findOne({ email });
-
-    if (existingEmployee) {
-      if (!sso) {
-        return res.status(409).json({
-          meta: {
-            statusCode: 409,
-            status: false,
-            message: `An account with email ${email} already exists.`,
-          },
-        });
-      }
-
-      const token = jwt.sign(
-        { employeeId: existingEmployee._id },
-        config.get("jwtSecret"),
-        { expiresIn: config.get("TokenExpire") }
-      );
-
-      return res.status(200).json({
-        meta: {
-          statusCode: 200,
-          status: true,
-          message: "Logged in successfully via SSO.",
-        },
-        data: {
-          token: token,
-          employee: {
-            id: existingEmployee._id,
-            firstName: existingEmployee.firstName,
-            lastName: existingEmployee.lastName,
-            email: existingEmployee.email,
-          },
-        },
-        redirectUrl: "/dashboard",
-      });
-    }
+    if (existingEmployee)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: `Already have an account on ${email}` } });
     if (sso === true) {
-      const { name } = req.body;
-
-      if (!name) {
-        return res.status(400).json({
-          meta: {
-            statusCode: 400,
-            status: false,
-            message: "Name is required for SSO signup.",
-          },
-        });
-      }
-
-      const [firstName, ...rest] = name.split(' ');
-      const lastName = rest.join(' ') || "";
-
-      const newEmployee = new Employee({
+      if (!firstName || !lastName)
+        return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Name is required" } });
+      const employee = await Employee.create({
         firstName,
         lastName,
         email,
         sso: true,
-        selfEnrolled: true,
         isEmailVerified: true,
+        selfEnrolled: true
       });
-
-      await newEmployee.save();
-
-      const token = jwt.sign(
-        { employeeId: newEmployee._id },
-        config.get("jwtSecret"),
-        { expiresIn: config.get("TokenExpire") }
-      );
-
-      return res.status(201).json({
-        meta: {
-          statusCode: 201,
-          status: true,
-          message: "SSO Employee created successfully.",
-        },
-        data: {
-          token: token,
-          employee: {
-            id: newEmployee._id,
-            firstName: newEmployee.firstName,
-            lastName: newEmployee.lastName,
-            email: newEmployee.email,
-          },
-        },
-        redirectUrl: "/dashboard",
+      const token = jwt.sign({ id: employee.id, sso: true }, config.get("jwtSecret"), { expiresIn: config.get("TokenExpire") });
+      return res.status(200).json({
+        data: { token },
+        meta: { statusCode: 200, status: true, message: "SSO signup successful" }
       });
     }
-
-    const { error } = employeeSchema.validate(req.body, { abortEarly: false });
-    if (error) {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: 'Validation failed.',
-          errors: error.details.map((err) => err.message),
-        },
-      });
-    }
-
-    const {
+    if (!password)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Password is required" } });
+    const otp = generateOtp();
+    const otpHash = await bcrypt.hash(otp, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await Employee.create({
       firstName,
       lastName,
-      country,
-      city,
-      phoneNumber,
-      password,
-      about,
-      education,
-      languages,
-      employmentHistory,
-      skills,
-      companyRefId,
-      selfEnrolled,
-    } = req.body;
-
-    if (!firstName || !lastName || typeof selfEnrolled !== "boolean") {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: "Missing required fields: firstName, lastName, or selfEnrolled.",
-        },
-      });
-    }
-
-    if (selfEnrolled) {
-      if (!password) {
-        return res.status(400).json({
-          meta: {
-            statusCode: 400,
-            status: false,
-            message: "Password is required for self-registration.",
-          },
-        });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const otp = generateOtp();
-
-      const newEmployee = new Employee({
-        firstName,
-        lastName,
-        country,
-        city,
-        phoneNumber,
-        email,
-        password: hashedPassword,
-        about,
-        otp,
-        isEmailVerified: false,
-        education: education?.map((edu) => ({
-          levelOfEducation: edu.levelOfEducation,
-          fieldOfStudy: edu.fieldOfStudy,
-          fromYear: edu.fromYear,
-          toYear: edu.toYear,
-        })),
-        languages,
-        employmentHistory,
-        skills: skills?.map((skill) => ({ skillName: skill.skillName })),
-        selfEnrolled: true,
-      });
-
-      await newEmployee.save();
-      await sendOtpEmail(email, otp);
-
-      return res.status(201).json({
-        meta: {
-          statusCode: 201,
-          status: true,
-          message: "Employee registered successfully. OTP sent to email.",
-        },
-        data: { id: newEmployee._id, email: newEmployee.email },
-      });
-    }
-
-    if (!selfEnrolled) {
-      if (!companyRefId) {
-        return res.status(400).json({
-          meta: {
-            statusCode: 400,
-            status: false,
-            message: "Company reference ID is required for company-added employees.",
-          },
-        });
-      }
-
-      const company = await Company.findOne({ companyRefId });
-      if (!company) {
-        return res.status(404).json({
-          meta: {
-            statusCode: 404,
-            status: false,
-            message: "Company not found.",
-          },
-        });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      const newEmployee = new Employee({
-        firstName,
-        lastName,
-        about,
-        country,
-        city,
-        phoneNumber,
-        email,
-        password: hashedPassword,
-        education: education?.map((edu) => ({
-          levelOfEducation: edu.levelOfEducation,
-          fieldOfStudy: edu.fieldOfStudy,
-          fromYear: edu.fromYear,
-          toYear: edu.toYear,
-        })),
-        languages,
-        employmentHistory,
-        skills: skills?.map((skill) => ({ skillName: skill.skillName })),
-        companyRefId,
-        selfEnrolled: false,
-      });
-
-      await newEmployee.save();
-
-      const emailBody = `
-        Hello ${firstName},
-        Your account has been created by your company.
-        Email: ${email}
-        Password: ${password}
-        Please change your password after logging in.
-      `;
-
-      await sendOtpEmail(email, emailBody);
-
-      return res.status(201).json({
-        meta: {
-          statusCode: 201,
-          status: true,
-          message: "Employee added successfully by the company.",
-        },
-        data: newEmployee,
-      });
-    }
-
-    return res.status(400).json({
-      meta: {
-        statusCode: 400,
-        status: false,
-        message: "Invalid request. Please provide proper flags.",
-      },
+      email,
+      password: hashedPassword,
+      otp: otpHash,
+      otpExpiresAt: Date.now() + 5 * 60 * 1000,
+      isEmailVerified: false,
+      selfEnrolled: selfEnrolled ?? true
     });
-
+    await sendOtpEmail(email, otp);
+    return res.status(200).json({ meta: { statusCode: 200, status: true, message: `OTP sent to ${email}` } });
   } catch (error) {
-    console.error("Error adding employee:", error.message);
+    console.error("Add Employee Error:", error);
     return res.status(500).json({
-      meta: {
-        statusCode: 500,
-        status: false,
-        message: "Server error. Could not add employee.",
-      },
+      meta: { statusCode: 500, status: false, message: "Internal Server Error!" }
     });
   }
 };
 
-
 exports.verifyEmployeeOtp = async (req, res) => {
-  const { email, otp } = req.body;
-
   try {
+    const { email, otp } = req.body;
+    if (!email || !otp)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email and OTP are required" } });
     const employee = await Employee.findOne({ email });
-
-    if (!employee) {
-      return res.status(404).json({
-        meta: {
-          statusCode: 404,
-          status: false,
-          message: "Employee not found.",
-        },
-      });
-    }
-
-    if (employee.otp !== otp) {
-      return res.status(400).json({
-        meta: {
-          statusCode: 400,
-          status: false,
-          message: "Invalid OTP. Please try again.",
-        },
-      });
-    }
-
+    if (!employee)
+      return res.status(404).json({ meta: { statusCode: 404, status: false, message: "Employee not found" } });
+    if (employee.isEmailVerified)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Email is already verified" } });
+    if (!employee.otp || Date.now() > employee.otpExpiresAt)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "OTP expired" } });
+    const isMatch = await bcrypt.compare(otp.toString(), employee.otp);
+    if (!isMatch)
+      return res.status(400).json({ meta: { statusCode: 400, status: false, message: "Invalid OTP" } });
     employee.isEmailVerified = true;
     employee.otp = null;
+    employee.otpExpiresAt = null;
     await employee.save();
-
-    res.status(200).json({
-      meta: {
-        statusCode: 200,
-        status: true,
-        message: "OTP verified successfully. Your email is now verified.",
-      },
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "Email verified successfully" }
     });
   } catch (error) {
-    console.error("Error verifying OTP:", error);
-    res.status(500).json({
-      meta: {
-        statusCode: 500,
-        status: false,
-        message: "Internal server error.",
-      },
+    console.error("Verify OTP Error:", error);
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Internal server error" }
     });
   }
 };
@@ -1066,7 +816,6 @@ exports.updateEmployee = async (req, res) => {
     }
 
     const employee = await Employee.findById(actualEmployeeId);
-
     if (!employee) {
       return res.status(404).json({
         meta: { statusCode: 404, status: false, message: "Employee not found." }
